@@ -1,10 +1,11 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
+	iofs "io/fs"
 	"strings"
 	"testing"
+
+	internalfs "github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 // TestLoadFromPathsUsesRHSMDefaultsAndApplicationOverrides verifies that TOML values override RHSM fallbacks.
@@ -13,10 +14,10 @@ import (
 func TestLoadFromPathsUsesRHSMDefaultsAndApplicationOverrides(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "rhc-heartbeat.conf")
-	rhsmPath := filepath.Join(dir, "rhsm.conf")
-	writeConfigTestFile(t, rhsmPath, `[server]
+	configPath := "/virtual/rhc-heartbeat.conf"
+	rhsmPath := "/virtual/rhsm.conf"
+	filesystem := configTestFS{files: make(map[string][]byte)}
+	writeConfigTestFile(filesystem.files, rhsmPath, `[server]
 hostname = satellite.example.com
 port = 8443
 prefix = /rhsm
@@ -28,7 +29,7 @@ proxy_port = 3128
 proxy_user = rhsm-user
 proxy_password = rhsm-password
 `)
-	writeConfigTestFile(t, configPath, `[api.heartbeat]
+	writeConfigTestFile(filesystem.files, configPath, `[api.heartbeat]
 uri = "https://telemetry.example.com/custom/v1/logs"
 tls-verify = true
 
@@ -36,7 +37,7 @@ tls-verify = true
 user = "site-user"
 `)
 
-	got, err := LoadFromPaths(configPath, rhsmPath)
+	got, err := LoadFromPaths(filesystem, configPath, rhsmPath)
 	if err != nil {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
@@ -58,10 +59,10 @@ user = "site-user"
 func TestLoadFromPathsIgnoresCommentedOverrides(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "rhc-heartbeat.conf")
-	rhsmPath := filepath.Join(dir, "rhsm.conf")
-	writeConfigTestFile(t, rhsmPath, `[server]
+	configPath := "/virtual/rhc-heartbeat.conf"
+	rhsmPath := "/virtual/rhsm.conf"
+	filesystem := configTestFS{files: make(map[string][]byte)}
+	writeConfigTestFile(filesystem.files, rhsmPath, `[server]
 hostname = satellite.example.com
 port = 8443
 prefix = /rhsm
@@ -76,7 +77,7 @@ proxy_port = 3128
 proxy_user = rhsm-user
 proxy_password = rhsm-password
 `)
-	writeConfigTestFile(t, configPath, `# [api.heartbeat]
+	writeConfigTestFile(filesystem.files, configPath, `# [api.heartbeat]
 # uri = "https://commented.example.com/v1/logs"
 [api.heartbeat]
 uri = "https://configured.example.com/v1/logs"
@@ -89,7 +90,7 @@ uri = "https://configured.example.com/v1/logs"
 # password = "commented-password"
 `)
 
-	got, err := LoadFromPaths(configPath, rhsmPath)
+	got, err := LoadFromPaths(filesystem, configPath, rhsmPath)
 	if err != nil {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
@@ -107,7 +108,7 @@ uri = "https://configured.example.com/v1/logs"
 		t.Errorf("HTTP.Proxy = %+v, want non-overridden RHSM values", got.HTTP.Proxy)
 	}
 
-	missingConfig, err := LoadFromPaths(filepath.Join(dir, "missing.conf"), rhsmPath)
+	missingConfig, err := LoadFromPaths(filesystem, "/virtual/missing.conf", rhsmPath)
 	if err != nil {
 		t.Fatalf("LoadFromPaths() with missing TOML error = %v", err)
 	}
@@ -124,15 +125,15 @@ uri = "https://configured.example.com/v1/logs"
 func TestLoadFromPathsUsesRHSMDerivedOTELURI(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	rhsmPath := filepath.Join(dir, "rhsm.conf")
-	writeConfigTestFile(t, rhsmPath, `[server]
+	rhsmPath := "/virtual/rhsm.conf"
+	filesystem := configTestFS{files: make(map[string][]byte)}
+	writeConfigTestFile(filesystem.files, rhsmPath, `[server]
 hostname = satellite.example.com
 port = 443
 prefix = /redhat_access
 `)
 
-	got, err := LoadFromPaths(filepath.Join(dir, "missing.conf"), rhsmPath)
+	got, err := LoadFromPaths(filesystem, "/virtual/missing.conf", rhsmPath)
 	if err != nil {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
@@ -152,19 +153,19 @@ prefix = /redhat_access
 func TestLoadFromPathsPreservesExplicitEmptyEndpoint(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.conf")
-	rhsmPath := filepath.Join(dir, "rhsm.conf")
+	configPath := "/virtual/config.conf"
+	rhsmPath := "/virtual/rhsm.conf"
+	filesystem := configTestFS{files: make(map[string][]byte)}
 
-	writeConfigTestFile(t, configPath, `[api.heartbeat]
+	writeConfigTestFile(filesystem.files, configPath, `[api.heartbeat]
 uri = ""
 `)
-	writeConfigTestFile(t, rhsmPath, `[server]
+	writeConfigTestFile(filesystem.files, rhsmPath, `[server]
 hostname = satellite.example.com
 port = 443
 `)
 
-	got, err := LoadFromPaths(configPath, rhsmPath)
+	got, err := LoadFromPaths(filesystem, configPath, rhsmPath)
 	if err != nil {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
@@ -180,7 +181,9 @@ port = 443
 func TestLoadFromPathsAllowsMissingFiles(t *testing.T) {
 	t.Parallel()
 
-	got, err := LoadFromPaths(filepath.Join(t.TempDir(), "missing.conf"), filepath.Join(t.TempDir(), "missing-rhsm.conf"))
+	filesystem := configTestFS{files: make(map[string][]byte)}
+
+	got, err := LoadFromPaths(filesystem, "/virtual/missing.conf", "/virtual/missing-rhsm.conf")
 	if err != nil {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
@@ -228,19 +231,20 @@ func TestLoadFromPathsRejectsInvalidFilesAndURIs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			configPath := filepath.Join(dir, "config.conf")
-			rhsmPath := filepath.Join(dir, "rhsm.conf")
+
+			configPath := "/virtual/config.conf"
+			rhsmPath := "/virtual/rhsm.conf"
+			filesystem := configTestFS{files: make(map[string][]byte)}
 
 			if tt.configData != "" {
-				writeConfigTestFile(t, configPath, tt.configData)
+				writeConfigTestFile(filesystem.files, configPath, tt.configData)
 			}
 
 			if tt.rhsmData != "" {
-				writeConfigTestFile(t, rhsmPath, tt.rhsmData)
+				writeConfigTestFile(filesystem.files, rhsmPath, tt.rhsmData)
 			}
 
-			_, err := LoadFromPaths(configPath, rhsmPath)
+			_, err := LoadFromPaths(filesystem, configPath, rhsmPath)
 			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 				t.Fatalf("LoadFromPaths() error = %v, want text %q", err, tt.wantError)
 			}
@@ -248,11 +252,25 @@ func TestLoadFromPathsRejectsInvalidFilesAndURIs(t *testing.T) {
 	}
 }
 
-// writeConfigTestFile writes a private test configuration file.
-func writeConfigTestFile(t *testing.T, path, content string) {
-	t.Helper()
+type configTestFS struct {
+	internalfs.FS
 
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write test file: %v", err)
+	files map[string][]byte
+}
+
+var _ internalfs.FS = configTestFS{}
+
+// Read returns configured test contents or a virtual not-exist error.
+func (filesystem configTestFS) Read(path string) ([]byte, error) {
+	data, ok := filesystem.files[path]
+	if !ok {
+		return nil, &iofs.PathError{Op: "read", Path: path, Err: iofs.ErrNotExist}
 	}
+
+	return append([]byte(nil), data...), nil
+}
+
+// writeConfigTestFile adds configuration contents to the in-memory test filesystem.
+func writeConfigTestFile(files map[string][]byte, path, content string) {
+	files[path] = []byte(content)
 }

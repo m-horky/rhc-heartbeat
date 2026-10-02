@@ -6,11 +6,10 @@ import (
 	"fmt"
 	iofs "io/fs"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 // Config is the resolved heartbeat configuration.
@@ -63,19 +62,20 @@ type partialProxy struct {
 	Password *string `toml:"password"`
 }
 
-// LoadFromPaths resolves the application TOML file over rhsm.conf-derived defaults.
-// Missing files are allowed; errors reading or parsing present files are returned.
-func LoadFromPaths(configPath, rhsmPath string) (Config, error) {
+// LoadFromPaths resolves the application TOML file over rhsm.conf-derived defaults
+// using filesystem for file access. Missing files are allowed; errors reading or
+// parsing present files are returned.
+func LoadFromPaths(filesystem fs.FS, configPath, rhsmPath string) (Config, error) {
 	cfg := Config{OTEL: Endpoint{TLSVerify: true}}
 
-	legacy, err := loadRHSM(rhsmPath)
+	legacy, err := loadRHSM(filesystem, rhsmPath)
 	if err != nil {
 		return Config{}, err
 	}
 
 	cfg = cfg.applyRHSM(legacy)
 
-	data, err := os.ReadFile(filepath.Clean(configPath))
+	data, err := filesystem.Read(configPath)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
 			return cfg, nil
