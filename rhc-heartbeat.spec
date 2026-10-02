@@ -21,7 +21,9 @@ BuildRequires:  askalono-cli
 %endif
 
 %description
-rhc-heartbeat collects system uptime, wall-clock time, and time-synchronization status, then uploads the heartbeat to an OpenTelemetry endpoint.
+rhc-heartbeat collects system uptime, wall-clock time, and
+time-synchronization status. It uploads the heartbeat to an
+OpenTelemetry endpoint.
 
 %prep
 # Unpack Source0 and set up the go build directory. Since -k is not passed in,
@@ -30,7 +32,7 @@ rhc-heartbeat collects system uptime, wall-clock time, and time-synchronization 
 # Unpack Source1 into the build tree, providing the vendor/ directory.
 %setup -q -T -D -a1 -n %{name}-%{version}
 # Apply patches, if present
-%autopatch -p1
+# %autopatch -p1
 
 %generate_buildrequires
 %if 0%{?fedora}
@@ -68,11 +70,6 @@ install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/
 # Trigger unit tests, unless explicitly disabled.
 %gocheck
 %endif
-
-%clean
-# Remove the module cache so rpmbuild can remove the build tree.
-GOMODCACHE="%{gobuilddir}/pkg/mod" go clean -modcache
-rm -rf %{buildroot}
 
 %if 0%{?fedora}
 # With go-vendor-tools, we also get a list of dependency licenses.
