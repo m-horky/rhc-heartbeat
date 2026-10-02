@@ -15,3 +15,9 @@
   - [ ] Read sub-man facts output to obtain the system profile
 - [ ] OTLP client
   - [ ] Accept context.Context, resolve config.Config, and heartbeat.Heartbeat.
+- [ ] Cache heartbeats locally
+  - [x] Store typed heartbeat objects as one JSON value per line in `/var/lib/rhc/heartbeat.jsonl`
+  - [ ] Attempt to upload each new heartbeat before caching it; cache only failed uploads
+  - [ ] After a new heartbeat uploads successfully, backfill cached heartbeats in batches
+  - [ ] Remove a cached batch only after confirmed successful delivery; retain it on failure or ambiguous results
+  - [ ] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
