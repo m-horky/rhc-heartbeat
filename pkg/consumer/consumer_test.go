@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/m-horky/rhc-heartbeat/internal/constants"
 )
 
 // TestGetUsesConfiguredCertificatePath verifies the certificate path environment override.
@@ -20,7 +22,7 @@ import (
 func TestGetUsesConfiguredCertificatePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "consumer.pem")
 	writeConsumerTestCertificate(t, path)
-	t.Setenv(certificatePathEnv, path)
+	t.Setenv(constants.ClientCertificatePathEnv, path)
 
 	got, err := Get()
 	if err != nil {

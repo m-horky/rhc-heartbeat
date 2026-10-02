@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/m-horky/rhc-heartbeat/internal/constants"
 )
 
 // TestGetUsesConfiguredRHSMPath verifies the RHSM path environment override.
@@ -19,8 +21,8 @@ func TestGetUsesConfiguredRHSMPath(t *testing.T) {
 		t.Fatalf("write RHSM configuration: %v", err)
 	}
 
-	t.Setenv(configPathEnv, configPath)
-	t.Setenv(rhsmPathEnv, rhsmPath)
+	t.Setenv(constants.ConfigPathEnv, configPath)
+	t.Setenv(constants.RHSMPathEnv, rhsmPath)
 
 	got, err := Get()
 	if err != nil {
