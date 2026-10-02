@@ -1,74 +1,63 @@
 package clock
 
 import (
-	"math"
 	"testing"
-	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-// TestReadReturnsSystemClocks verifies both requested system clocks are read.
+// TestReadReturnsRawTimespecs verifies both system clocks are returned without conversion.
 //
-// Given a running Linux system, when reading the clocks, then uptime is nonnegative and wall time is current.
-func TestReadReturnsSystemClocks(t *testing.T) {
+// Given a running Linux system, when reading the clocks, then both raw timespec values are valid and current.
+func TestReadReturnsRawTimespecs(t *testing.T) {
 	t.Parallel()
 
-	before := time.Now()
-	got, err := Read()
-	after := time.Now()
+	beforeMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC_RAW)
+	beforeRealtime := readClockForTest(t, unix.CLOCK_REALTIME)
 
+	got, err := Read()
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
 
-	if got.Uptime < 0 {
-		t.Errorf("Read().Uptime = %s, want a nonnegative monotonic uptime", got.Uptime)
+	afterMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC_RAW)
+	afterRealtime := readClockForTest(t, unix.CLOCK_REALTIME)
+
+	if !validTimespec(got.TimeMonotonic) {
+		t.Errorf("TimeMonotonic = %+v, want valid timespec", got.TimeMonotonic)
 	}
 
-	if got.WallTime.Before(before) || got.WallTime.After(after) {
-		t.Errorf("Read().WallTime = %s, want a time between %s and %s", got.WallTime, before, after)
+	if !validTimespec(got.Time) {
+		t.Errorf("Time = %+v, want valid timespec", got.Time)
+	}
+
+	if timespecBefore(got.TimeMonotonic, beforeMonotonic) || timespecBefore(afterMonotonic, got.TimeMonotonic) {
+		t.Errorf("TimeMonotonic = %+v, want value between %+v and %+v", got.TimeMonotonic, beforeMonotonic, afterMonotonic)
+	}
+
+	if timespecBefore(got.Time, beforeRealtime) || timespecBefore(afterRealtime, got.Time) {
+		t.Errorf("Time = %+v, want value between %+v and %+v", got.Time, beforeRealtime, afterRealtime)
 	}
 }
 
-// TestDurationFromTimespecValidatesInput verifies timespec values convert safely to durations.
-//
-// Given a valid or malformed timespec, when converting it, then it is converted or rejected safely.
-func TestDurationFromTimespecValidatesInput(t *testing.T) {
-	t.Parallel()
+// readClockForTest reads a clock timespec for test range comparisons.
+func readClockForTest(t *testing.T, clockID int32) unix.Timespec {
+	t.Helper()
 
-	const maxDuration = time.Duration(math.MaxInt64)
-
-	tests := []struct {
-		name        string
-		seconds     int64
-		nanoseconds int64
-		want        time.Duration
-		wantErr     bool
-	}{
-		{name: "whole seconds", seconds: 3, nanoseconds: 4, want: 3*time.Second + 4},
-		{
-			name:        "maximum duration",
-			seconds:     int64(maxDuration / time.Second),
-			nanoseconds: int64(maxDuration % time.Second),
-			want:        maxDuration,
-		},
-		{name: "negative seconds", seconds: -1, wantErr: true},
-		{name: "negative nanoseconds", nanoseconds: -1, wantErr: true},
-		{name: "nanoseconds out of range", nanoseconds: int64(time.Second), wantErr: true},
-		{name: "duration overflow", seconds: int64(maxDuration/time.Second) + 1, wantErr: true},
+	var reading unix.Timespec
+	if err := unix.ClockGettime(clockID, &reading); err != nil {
+		t.Fatalf("ClockGettime(%d) error = %v", clockID, err)
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	return reading
+}
 
-			got, err := durationFromTimespec(test.seconds, test.nanoseconds)
-			if (err != nil) != test.wantErr {
-				t.Fatalf("durationFromTimespec() error = %v, wantErr %t", err, test.wantErr)
-			}
+// validTimespec reports whether a timespec has a valid nonnegative second and nanosecond component.
+func validTimespec(value unix.Timespec) bool {
+	return value.Sec >= 0 && value.Nsec >= 0 && value.Nsec < 1_000_000_000
+}
 
-			if err == nil && got != test.want {
-				t.Errorf("durationFromTimespec() = %s, want %s", got, test.want)
-			}
-		})
-	}
+// timespecBefore reports whether left is earlier than right.
+func timespecBefore(left, right unix.Timespec) bool {
+	return left.Sec < right.Sec || (left.Sec == right.Sec && left.Nsec < right.Nsec)
 }
