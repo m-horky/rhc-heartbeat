@@ -6,11 +6,10 @@ import (
 	iofs "io/fs"
 	"net"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"gopkg.in/ini.v1"
 )
 
@@ -49,8 +48,8 @@ type rhsmSettings struct {
 }
 
 // loadRHSM reads, parses, and translates the supported rhsm.conf settings.
-func loadRHSM(path string) (rhsmSettings, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+func loadRHSM(filesystem fs.FS, path string) (rhsmSettings, error) {
+	data, err := filesystem.Read(path)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
 			return rhsmSettings{}, nil

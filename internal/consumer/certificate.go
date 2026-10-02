@@ -5,9 +5,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 // Identity contains the UUID and organization ID from a consumer certificate.
@@ -16,9 +16,10 @@ type Identity struct {
 	OrgID string
 }
 
-// ReadCertificate reads a PEM-encoded consumer certificate and extracts its identity.
-func ReadCertificate(path string) (Identity, error) {
-	data, err := os.ReadFile(filepath.Clean(path))
+// ReadCertificate reads a PEM-encoded consumer certificate through filesystem
+// and extracts its identity.
+func ReadCertificate(filesystem fs.FS, path string) (Identity, error) {
+	data, err := filesystem.Read(path)
 	if err != nil {
 		return Identity{}, fmt.Errorf("read consumer certificate %s: %w", path, err)
 	}

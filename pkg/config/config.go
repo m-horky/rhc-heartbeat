@@ -6,6 +6,7 @@ import (
 	"os"
 
 	internalconfig "github.com/m-horky/rhc-heartbeat/internal/config"
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 const (
@@ -46,7 +47,7 @@ func Get() (Config, error) {
 		slog.Debug("using configured RHSM configuration", "path", rhsmPath)
 	}
 
-	cfg, err := internalconfig.LoadFromPaths(path, rhsmPath)
+	cfg, err := internalconfig.LoadFromPaths(fs.Filesystem{}, path, rhsmPath)
 	if err != nil {
 		return Config{}, fmt.Errorf("load heartbeat configuration: %w", err)
 	}

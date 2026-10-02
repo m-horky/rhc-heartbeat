@@ -6,12 +6,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	iofs "io/fs"
 	"math/big"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	internalfs "github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 // TestReadCertificateExtractsIdentity verifies identity extraction from the certificate subject.
@@ -19,13 +20,14 @@ import (
 // Given a PEM certificate with a common name and one organization,
 // when reading it, then both identity fields are returned.
 func TestReadCertificateExtractsIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "consumer.pem")
-	writeCertificateTestFile(t, path, makeCertificateTestPEM(t, pkix.Name{
+	path := "/virtual/consumer.pem"
+	contents := makeCertificateTestPEM(t, pkix.Name{
 		CommonName:   "c94f4db8-ad9c-4653-95fd-647d247420f8",
 		Organization: []string{"20008437"},
-	}))
+	})
+	filesystem := certificateTestFS{files: map[string][]byte{path: contents}}
 
-	got, err := ReadCertificate(path)
+	got, err := ReadCertificate(filesystem, path)
 	if err != nil {
 		t.Fatalf("ReadCertificate() error = %v", err)
 	}
@@ -83,10 +85,11 @@ func TestReadCertificateRejectsInvalidIdentity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			path := filepath.Join(t.TempDir(), "consumer.pem")
-			writeCertificateTestFile(t, path, tt.data)
 
-			if _, err := ReadCertificate(path); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			path := "/virtual/consumer.pem"
+			filesystem := certificateTestFS{files: map[string][]byte{path: tt.data}}
+
+			if _, err := ReadCertificate(filesystem, path); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("ReadCertificate() error = %v, want text %q", err, tt.wantErr)
 			}
 		})
@@ -120,11 +123,20 @@ func makeCertificateTestPEM(t *testing.T, subject pkix.Name) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
-// writeCertificateTestFile writes a private certificate fixture.
-func writeCertificateTestFile(t *testing.T, path string, data []byte) {
-	t.Helper()
+type certificateTestFS struct {
+	internalfs.FS
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write certificate fixture: %v", err)
+	files map[string][]byte
+}
+
+var _ internalfs.FS = certificateTestFS{}
+
+// Read returns configured test contents or a virtual not-exist error.
+func (filesystem certificateTestFS) Read(path string) ([]byte, error) {
+	data, ok := filesystem.files[path]
+	if !ok {
+		return nil, &iofs.PathError{Op: "read", Path: path, Err: iofs.ErrNotExist}
 	}
+
+	return append([]byte(nil), data...), nil
 }

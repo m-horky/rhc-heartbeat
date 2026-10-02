@@ -7,6 +7,7 @@ import (
 	"os"
 
 	internalconsumer "github.com/m-horky/rhc-heartbeat/internal/consumer"
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
 const (
@@ -27,7 +28,7 @@ func Get() (Identity, error) {
 		slog.Debug("using configured consumer certificate", "path", path)
 	}
 
-	identity, err := internalconsumer.ReadCertificate(path)
+	identity, err := internalconsumer.ReadCertificate(fs.Filesystem{}, path)
 	if err != nil {
 		return Identity{}, fmt.Errorf("load consumer identity: %w", err)
 	}
