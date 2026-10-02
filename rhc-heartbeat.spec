@@ -17,7 +17,7 @@ BuildRequires:  systemd-rpm-macros
 %if 0%{?fedora}
 # These build-time dependencies only exist for Fedora.
 BuildRequires:  go-vendor-tools
-BuildRequires:  askalono
+BuildRequires:  askalono-cli
 %endif
 
 %description
