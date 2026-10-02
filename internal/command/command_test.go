@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+// TestChronycTrackingCommandUsesAbsolutePath verifies chronyc execution cannot be redirected through PATH.
+//
+// Given a PATH that could contain an attacker-controlled chronyc, when constructing the approved invocation,
+// then the command uses the fixed absolute executable path and fixed arguments.
+func TestChronycTrackingCommandUsesAbsolutePath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	cmd := chronycTrackingCommand(context.Background())
+	if cmd.Path != chronycExecutable {
+		t.Fatalf("command path = %q, want %q", cmd.Path, chronycExecutable)
+	}
+
+	if len(cmd.Args) != 3 || cmd.Args[1] != "-c" || cmd.Args[2] != "tracking" {
+		t.Errorf("command args = %q, want fixed tracking invocation", cmd.Args)
+	}
+}
+
 // TestOSRunnerRejectsUnapprovedInvocations verifies unknown commands cannot reach the process executor.
 //
 // Given an executable or argument list that is not approved, when running it, then the request is rejected.

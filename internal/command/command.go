@@ -25,13 +25,20 @@ type OSRunner struct{}
 // Compile-time validation that OSRunner implements Runner.
 var _ Runner = OSRunner{}
 
+const chronycExecutable = "/usr/bin/chronyc"
+
+// chronycTrackingCommand constructs the approved chronyc invocation using its fixed executable path.
+func chronycTrackingCommand(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, chronycExecutable, "-c", "tracking")
+}
+
 // Run executes name with args, capturing its standard output and standard error.
 func (OSRunner) Run(ctx context.Context, name string, args ...string) (Result, error) {
 	var cmd *exec.Cmd
 
 	switch {
 	case name == "chronyc" && len(args) == 2 && args[0] == "-c" && args[1] == "tracking":
-		cmd = exec.CommandContext(ctx, "chronyc", "-c", "tracking")
+		cmd = chronycTrackingCommand(ctx)
 	default:
 		return Result{}, fmt.Errorf("unsupported command invocation %q %q", name, args)
 	}
