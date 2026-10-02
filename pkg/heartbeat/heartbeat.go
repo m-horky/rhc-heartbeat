@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/m-horky/rhc-heartbeat/internal/bootid"
 	"github.com/m-horky/rhc-heartbeat/internal/chrony"
@@ -36,14 +37,14 @@ const (
 )
 
 // Heartbeat contains the system identity and time data collected for one event.
-// TimeMonotonic is whole CLOCK_MONOTONIC_RAW seconds since boot, and TimeUnix
-// is whole CLOCK_REALTIME seconds since the Unix epoch.
+// TimeMonotonic is CLOCK_MONOTONIC_RAW elapsed time since boot, and TimeUnix is
+// the CLOCK_REALTIME timestamp of the event. Both preserve nanosecond resolution.
 type Heartbeat struct {
 	HostID        string
 	HostOrg       string
 	BootID        string
-	TimeMonotonic int64
-	TimeUnix      int64
+	TimeMonotonic time.Duration
+	TimeUnix      time.Time
 	TimeQuality   TimeQuality
 	Trigger       Trigger
 }
@@ -103,12 +104,16 @@ func collect(ctx context.Context, trigger Trigger, source sources) (Heartbeat, e
 		timeQuality = timeQualityFromTracking(tracking)
 	}
 
+	monotonicTime := time.Duration(clockReading.TimeMonotonic.Sec)*time.Second +
+		time.Duration(clockReading.TimeMonotonic.Nsec)
+	unixTime := time.Unix(clockReading.Time.Sec, clockReading.Time.Nsec).UTC()
+
 	return Heartbeat{
 		HostID:        identity.UUID,
 		HostOrg:       identity.OrgID,
 		BootID:        bootID,
-		TimeMonotonic: clockReading.TimeMonotonic.Sec,
-		TimeUnix:      clockReading.Time.Sec,
+		TimeMonotonic: monotonicTime,
+		TimeUnix:      unixTime,
 		TimeQuality:   timeQuality,
 		Trigger:       trigger,
 	}, nil
