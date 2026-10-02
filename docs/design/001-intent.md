@@ -17,7 +17,7 @@ Red Hat Enterprise Linux heartbeat software. The intent is to provide high-quali
 - System facts consist of:
   - RHSM UUID and ORG ID
   - BIOS UUID (extracted by dmi or by hand)
-  - CPU topology (architecture, core count (including hyperthreading), socket count)
+  - CPU topology (architecture, vCPU count)
   - Product IDs (extracted from /etc/pki/product-default and /etc/pki/product)
   - System name and version (/etc/os-release)
   - System purpose (owned by `subscription-manager syspurpose` after being configured by the administrator)

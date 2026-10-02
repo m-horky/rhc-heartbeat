@@ -18,3 +18,4 @@ fmt:
 build:
 	mkdir -p build
 	go build -o build/config ./examples/config
+	go build -o build/heartbeat ./examples/heartbeat

@@ -6,10 +6,10 @@
   - [x] Allow environment variables to override rhsm.conf
 - [ ] Heartbeat fields
   - [x] Read consumer certificate to obtain UUID and ORG ID
-  - [ ] Read kernel boot ID
+  - [x] Read kernel boot ID
   - [x] Read monotonic uptime and wall-clock time
-  - [ ] Call chrony and parse its output
-  - [ ] Construct the Heartbeat object
+  - [x] Call chrony and parse its output
+  - [x] Construct the Heartbeat object
 - [ ] Profile
   - [ ] Read product certificate to obtain ID
   - [ ] Read sub-man facts output to obtain the system profile
