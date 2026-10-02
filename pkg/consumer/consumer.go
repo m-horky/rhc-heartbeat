@@ -6,13 +6,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	internalconsumer "github.com/m-horky/rhc-heartbeat/internal/consumer"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
-)
-
-const (
-	certificatePathEnv     = "RHC_HEARTBEAT_CONSUMER_CERT"
-	defaultCertificatePath = "/etc/pki/consumer/cert.pem"
 )
 
 // Identity contains the UUID and organization ID from a consumer certificate.
@@ -20,9 +16,9 @@ type Identity = internalconsumer.Identity
 
 // Get reads the consumer identity using the configured certificate path or system default.
 func Get() (Identity, error) {
-	path := os.Getenv(certificatePathEnv)
+	path := os.Getenv(constants.ClientCertificatePathEnv)
 	if path == "" {
-		path = defaultCertificatePath
+		path = constants.DefaultClientCertificatePath
 		slog.Debug("using default consumer certificate", "path", path)
 	} else {
 		slog.Debug("using configured consumer certificate", "path", path)

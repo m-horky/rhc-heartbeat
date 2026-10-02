@@ -6,15 +6,8 @@ import (
 	"os"
 
 	internalconfig "github.com/m-horky/rhc-heartbeat/internal/config"
+	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
-)
-
-const (
-	configPathEnv = "RHC_HEARTBEAT_CONFIG"
-	rhsmPathEnv   = "RHC_HEARTBEAT_RHSM_CONFIG"
-
-	defaultConfigPath = "/etc/rhc/rhc-heartbeat.conf"
-	defaultRHSMPath   = "/etc/rhsm/rhsm.conf"
 )
 
 // Config is the resolved heartbeat configuration.
@@ -31,17 +24,17 @@ type Proxy = internalconfig.Proxy
 
 // Get loads heartbeat configuration from environment overrides or the system defaults.
 func Get() (Config, error) {
-	path := os.Getenv(configPathEnv)
+	path := os.Getenv(constants.ConfigPathEnv)
 	if path == "" {
-		path = defaultConfigPath
+		path = constants.DefaultConfigPath
 		slog.Debug("using default heartbeat configuration", "path", path)
 	} else {
 		slog.Debug("using configured heartbeat configuration", "path", path)
 	}
 
-	rhsmPath := os.Getenv(rhsmPathEnv)
+	rhsmPath := os.Getenv(constants.RHSMPathEnv)
 	if rhsmPath == "" {
-		rhsmPath = defaultRHSMPath
+		rhsmPath = constants.DefaultRHSMPath
 		slog.Debug("using default RHSM configuration", "path", rhsmPath)
 	} else {
 		slog.Debug("using configured RHSM configuration", "path", rhsmPath)
@@ -51,6 +44,20 @@ func Get() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load heartbeat configuration: %w", err)
 	}
+
+	proxyCredentialLogValue := ""
+	if cfg.HTTP.Proxy.User != "" || cfg.HTTP.Proxy.Password != "" {
+		proxyCredentialLogValue = "..."
+	}
+
+	slog.Debug("resolved heartbeat configuration",
+		"otel.uri", cfg.OTEL.URI,
+		"otel.tls_verify", cfg.OTEL.TLSVerify,
+		"otel.ca_path", cfg.OTEL.CAPath,
+		"http.proxy.uri", cfg.HTTP.Proxy.URI,
+		"http.proxy.user", proxyCredentialLogValue,
+		"http.proxy.password", proxyCredentialLogValue,
+	)
 
 	return cfg, nil
 }
