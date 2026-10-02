@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -49,8 +50,7 @@ type rhsmSettings struct {
 
 // loadRHSM reads, parses, and translates the supported rhsm.conf settings.
 func loadRHSM(path string) (rhsmSettings, error) {
-	//nolint:gosec // The production caller supplies the fixed /etc/rhsm/rhsm.conf path.
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
 			return rhsmSettings{}, nil

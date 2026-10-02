@@ -11,6 +11,9 @@ import (
 const (
 	configPathEnv = "RHC_HEARTBEAT_CONFIG"
 	rhsmPathEnv   = "RHC_HEARTBEAT_RHSM_CONFIG"
+
+	defaultConfigPath = "/etc/rhc/rhc-heartbeat.conf"
+	defaultRHSMPath   = "/etc/rhsm/rhsm.conf"
 )
 
 // Config is the resolved heartbeat configuration.
@@ -29,7 +32,7 @@ type Proxy = internalconfig.Proxy
 func Get() (Config, error) {
 	path := os.Getenv(configPathEnv)
 	if path == "" {
-		path = internalconfig.DefaultPath
+		path = defaultConfigPath
 		slog.Debug("using default heartbeat configuration", "path", path)
 	} else {
 		slog.Debug("using configured heartbeat configuration", "path", path)
@@ -37,7 +40,7 @@ func Get() (Config, error) {
 
 	rhsmPath := os.Getenv(rhsmPathEnv)
 	if rhsmPath == "" {
-		rhsmPath = internalconfig.RHSMPath
+		rhsmPath = defaultRHSMPath
 		slog.Debug("using default RHSM configuration", "path", rhsmPath)
 	} else {
 		slog.Debug("using configured RHSM configuration", "path", rhsmPath)

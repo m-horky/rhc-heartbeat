@@ -5,7 +5,7 @@ The heartbeat reads `/etc/rhc/rhc-heartbeat.conf` as TOML and uses `/etc/rhsm/rh
 Example application configuration:
 
 ```toml
-[otel]
+[api.heartbeat]
 # Overrides the endpoint derived from rhsm.conf.
 uri = "https://telemetry.example.com/otel/v1/logs"
 tls-verify = true
@@ -23,7 +23,7 @@ The resolved configuration starts with a secure TLS default, applies supported `
 From `rhsm.conf`, the loader uses:
 
 - `[server] hostname` and `port` to build the Candlepin origin, then appends `/otel/v1/logs` to produce the OTLP/HTTP URI. The `[server] prefix` API path is ignored. For example, with hostname `satellite.example.com`, port `8443`, and prefix `/rhsm`, the endpoint is `https://satellite.example.com:8443/otel/v1/logs`.
-- `[server] insecure` to set `otel.tls-verify` to the inverse value.
+- `[server] insecure` to set `api.heartbeat.tls-verify` to the inverse value.
 - `[rhsm] repo_ca_cert` as the OTEL endpoint CA path.
 - `[proxy] proxy_hostname`, `proxy_port`, `proxy_user`, and `proxy_password` as HTTP proxy defaults.
 

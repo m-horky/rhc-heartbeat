@@ -7,14 +7,10 @@ import (
 	iofs "io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-)
-
-const (
-	DefaultPath = "/etc/rhc/rhc-heartbeat.conf"
-	RHSMPath    = "/etc/rhsm/rhsm.conf"
 )
 
 // Config is the resolved heartbeat configuration.
@@ -43,8 +39,12 @@ type Proxy struct {
 }
 
 type partialConfig struct {
-	OTEL *partialEndpoint `toml:"otel"`
-	HTTP *partialHTTP     `toml:"http"`
+	API  *partialAPI  `toml:"api"`
+	HTTP *partialHTTP `toml:"http"`
+}
+
+type partialAPI struct {
+	Heartbeat *partialEndpoint `toml:"heartbeat"`
 }
 
 type partialHTTP struct {
@@ -63,9 +63,6 @@ type partialProxy struct {
 	Password *string `toml:"password"`
 }
 
-// Load reads the application configuration and rhsm.conf from their system paths.
-func Load() (Config, error) { return LoadFromPaths(DefaultPath, RHSMPath) }
-
 // LoadFromPaths resolves the application TOML file over rhsm.conf-derived defaults.
 // Missing files are allowed; errors reading or parsing present files are returned.
 func LoadFromPaths(configPath, rhsmPath string) (Config, error) {
@@ -78,8 +75,7 @@ func LoadFromPaths(configPath, rhsmPath string) (Config, error) {
 
 	cfg = cfg.applyRHSM(legacy)
 
-	//nolint:gosec // Load uses fixed system paths; LoadFromPaths supports controlled injection.
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(filepath.Clean(configPath))
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
 			return cfg, nil
@@ -123,8 +119,8 @@ func (cfg Config) applyRHSM(legacy rhsmSettings) Config {
 
 // apply applies explicitly supplied TOML values over resolved fallback settings.
 func (cfg *Config) apply(p partialConfig) error {
-	if p.OTEL != nil {
-		if err := cfg.applyEndpoint(*p.OTEL); err != nil {
+	if p.API != nil && p.API.Heartbeat != nil {
+		if err := cfg.applyEndpoint(*p.API.Heartbeat); err != nil {
 			return err
 		}
 	}
@@ -143,7 +139,7 @@ func (cfg *Config) applyEndpoint(p partialEndpoint) error {
 	if p.URI != nil {
 		uri, err := applyURI(*p.URI, validateEndpointURI)
 		if err != nil {
-			return fmt.Errorf("otel.uri: %w", err)
+			return fmt.Errorf("api.heartbeat.uri: %w", err)
 		}
 
 		cfg.OTEL.URI = uri
