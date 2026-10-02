@@ -32,11 +32,24 @@ func run() error {
 	encoder := toml.NewEncoder(os.Stdout)
 	encoder.Indent = ""
 
-	if err := encoder.Encode(cfg); err != nil {
+	if err := encoder.Encode(redactProxyCredentials(cfg)); err != nil {
 		return fmt.Errorf("write heartbeat configuration: %w", err)
 	}
 
 	slog.Info("resolved configuration output written")
 
 	return nil
+}
+
+// redactProxyCredentials replaces configured proxy credentials before configuration is written to stdout.
+func redactProxyCredentials(cfg heartbeatconfig.Config) heartbeatconfig.Config {
+	if cfg.HTTP.Proxy.User != "" {
+		cfg.HTTP.Proxy.User = "..."
+	}
+
+	if cfg.HTTP.Proxy.Password != "" {
+		cfg.HTTP.Proxy.Password = "..."
+	}
+
+	return cfg
 }
