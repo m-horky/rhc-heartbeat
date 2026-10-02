@@ -4,6 +4,7 @@ go 1.26.7
 
 require (
 	github.com/BurntSushi/toml v1.3.2
+	golang.org/x/sys v0.33.0
 	gopkg.in/ini.v1 v1.67.0
 )
 
