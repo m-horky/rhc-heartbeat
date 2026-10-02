@@ -111,3 +111,106 @@ func TestFilesystemReadMissingFile(t *testing.T) {
 		t.Fatalf("Read() error = %v, want os.ErrNotExist", err)
 	}
 }
+
+// TestFilesystemAppendCreatesAndAppends verifies that Append creates a file and adds data.
+//
+// Given a missing file in an existing directory, when Filesystem.Append appends
+// multiple values, then the file contains all values in order.
+func TestFilesystemAppendCreatesAndAppends(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "cache.jsonl")
+
+	filesystem := Filesystem{}
+	for _, data := range [][]byte{[]byte("first\n"), []byte("second\n")} {
+		if err := filesystem.Append(path, data, 0o640); err != nil {
+			t.Fatalf("Append() error = %v", err)
+		}
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(got) != "first\nsecond\n" {
+		t.Fatalf("file contents = %q, want %q", got, "first\nsecond\n")
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+
+	if gotMode := info.Mode().Perm(); gotMode != 0o640 {
+		t.Fatalf("file mode = %#o, want %#o", gotMode, 0o640)
+	}
+}
+
+// TestFilesystemReplaceAtomicallyReplaces verifies that Replace writes replacement contents.
+//
+// Given a file with old contents, when Filesystem.Replace writes new contents,
+// then subsequent reads return the complete new contents and requested mode.
+func TestFilesystemReplaceAtomicallyReplaces(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "cache.jsonl")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (Filesystem{}).Replace(path, []byte("new\n"), 0o640); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(got) != "new\n" {
+		t.Fatalf("file contents = %q, want %q", got, "new\n")
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+
+	if gotMode := info.Mode().Perm(); gotMode != 0o640 {
+		t.Fatalf("file mode = %#o, want %#o", gotMode, 0o640)
+	}
+}
+
+// TestFilesystemAppendRejectsSymlink verifies that Append does not follow a final symlink.
+//
+// Given a symlink to a regular file, when Filesystem.Append opens the link,
+// then it returns an error and leaves the target unchanged.
+func TestFilesystemAppendRejectsSymlink(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target")
+	link := filepath.Join(directory, "link")
+
+	if err := os.WriteFile(target, []byte("unchanged"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (Filesystem{}).Append(link, []byte("changed"), 0o640); err == nil {
+		t.Fatal("Append() succeeded for a symlink")
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(got) != "unchanged" {
+		t.Fatalf("target contents = %q, want unchanged", got)
+	}
+}
