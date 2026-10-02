@@ -20,6 +20,7 @@ build:
 	go build -o build/config ./examples/config
 	go build -o build/heartbeat ./examples/heartbeat
 	go build -o build/otlp-upload ./examples/otlp-upload
+	go build -o build/rhc-heartbeat ./cmd/rhc-heartbeat
 
 .PHONY: server
 server:

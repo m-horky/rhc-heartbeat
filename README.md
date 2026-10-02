@@ -1,5 +1,6 @@
+## Testing
 
-## Configuration
-
-- `RHC_HEARTBEAT_CONFIG=/etc/rhc/rhc-heartbeat.conf`
-- `RHC_HEARTBEAT_RHSM_CONFIG=/etc/rhsm/rhsm.conf`
+```shell
+$ make server &
+$ make build >/dev/null && RHC_HEARTBEAT_CONFIG=test/dev.toml ./build/rhc-heartbeat
+```

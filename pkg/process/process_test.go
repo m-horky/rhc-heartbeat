@@ -3,13 +3,18 @@ package process
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
+	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
+	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 // TestProcessCachesNewHeartbeatAfterUploadFailure verifies that an undelivered new heartbeat is persisted.
@@ -28,7 +33,7 @@ func TestProcessCachesNewHeartbeatAfterUploadFailure(t *testing.T) {
 		return errors.New("unavailable")
 	}
 
-	if err := Process(context.Background(), want, upload, pending); err != nil {
+	if err := processHeartbeat(context.Background(), want, upload, pending); err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
 
@@ -74,7 +79,7 @@ func TestProcessRetainsCacheWhenBackfillFails(t *testing.T) {
 		return errors.New("unavailable")
 	}
 
-	if err := Process(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
+	if err := processHeartbeat(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
 
@@ -113,7 +118,7 @@ func TestProcessRemovesCachedRecordsAfterConfirmedBackfill(t *testing.T) {
 
 		return nil
 	}
-	if err := Process(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
+	if err := processHeartbeat(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
 
@@ -150,7 +155,7 @@ func TestProcessSerializesConcurrentCalls(t *testing.T) {
 	results := make(chan error, 2)
 
 	go func() {
-		results <- Process(context.Background(), heartbeat.Heartbeat{HostID: "first"}, upload, pending)
+		results <- processHeartbeat(context.Background(), heartbeat.Heartbeat{HostID: "first"}, upload, pending)
 	}()
 
 	select {
@@ -160,7 +165,7 @@ func TestProcessSerializesConcurrentCalls(t *testing.T) {
 	}
 
 	go func() {
-		results <- Process(context.Background(), heartbeat.Heartbeat{HostID: "second"}, upload, pending)
+		results <- processHeartbeat(context.Background(), heartbeat.Heartbeat{HostID: "second"}, upload, pending)
 	}()
 
 	select {
@@ -206,7 +211,7 @@ func TestProcessBackfillsCachedHeartbeatsInBatches(t *testing.T) {
 
 		return nil
 	}
-	if err := Process(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
+	if err := processHeartbeat(context.Background(), heartbeat.Heartbeat{HostID: "new"}, upload, pending); err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
 
@@ -223,4 +228,75 @@ func TestProcessBackfillsCachedHeartbeatsInBatches(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("ReadAll() returned %d records, want empty cache", len(got))
 	}
+}
+
+// TestNewProcessorUploadsThroughConfiguredOTLP verifies the processor wires its OTLP client to the upload workflow.
+//
+// Given a configured OTLP endpoint and one cached heartbeat
+// When the processor handles a new heartbeat
+// Then it uploads the new heartbeat separately, backfills the cache, and clears delivered records.
+func TestNewProcessorUploadsThroughConfiguredOTLP(t *testing.T) {
+	t.Parallel()
+
+	batchSizes := make(chan int, 2)
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		payload, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+
+		logs, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(payload)
+		if err != nil {
+			t.Errorf("decode OTLP/JSON request: %v", err)
+		} else {
+			batchSizes <- logs.ResourceLogs().Len()
+		}
+
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"partialSuccess":{}}`))
+	}))
+	defer server.Close()
+
+	pending := cache.New(filepath.Join(t.TempDir(), "heartbeat.jsonl"))
+	if err := pending.Append(heartbeat.Heartbeat{HostID: "cached"}); err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+
+	processor, err := New(config.Config{
+		OTEL: config.Endpoint{URI: server.URL + "/v1/logs", TLSVerify: true},
+	}, pending)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer processor.CloseIdleConnections()
+
+	if err := processor.Process(context.Background(), heartbeat.Heartbeat{HostID: "new"}); err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+
+	for range 2 {
+		if got := <-batchSizes; got != 1 {
+			t.Errorf("OTLP request contained %d records, want one", got)
+		}
+	}
+
+	got, err := pending.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+
+	if len(got) != 0 {
+		t.Fatalf("ReadAll() returned %d records, want empty cache", len(got))
+	}
+}
+
+// processHeartbeat creates a processor with a test upload callback and runs one heartbeat through it.
+func processHeartbeat(
+	ctx context.Context,
+	hb heartbeat.Heartbeat,
+	upload func(context.Context, []heartbeat.Heartbeat) error,
+	pending *cache.Cache,
+) error {
+	return (&Processor{upload: upload, pending: pending}).Process(ctx, hb)
 }
