@@ -28,7 +28,7 @@ proxy_port = 3128
 proxy_user = rhsm-user
 proxy_password = rhsm-password
 `)
-	writeConfigTestFile(t, configPath, `[otel]
+	writeConfigTestFile(t, configPath, `[api.heartbeat]
 uri = "https://telemetry.example.com/custom/v1/logs"
 tls-verify = true
 
@@ -76,9 +76,9 @@ proxy_port = 3128
 proxy_user = rhsm-user
 proxy_password = rhsm-password
 `)
-	writeConfigTestFile(t, configPath, `# [otel]
+	writeConfigTestFile(t, configPath, `# [api.heartbeat]
 # uri = "https://commented.example.com/v1/logs"
-[otel]
+[api.heartbeat]
 uri = "https://configured.example.com/v1/logs"
 # tls-verify = true
 # ca-path = "/commented/ca.pem"
@@ -156,7 +156,7 @@ func TestLoadFromPathsPreservesExplicitEmptyEndpoint(t *testing.T) {
 	configPath := filepath.Join(dir, "config.conf")
 	rhsmPath := filepath.Join(dir, "rhsm.conf")
 
-	writeConfigTestFile(t, configPath, `[otel]
+	writeConfigTestFile(t, configPath, `[api.heartbeat]
 uri = ""
 `)
 	writeConfigTestFile(t, rhsmPath, `[server]
@@ -206,13 +206,13 @@ func TestLoadFromPathsRejectsInvalidFilesAndURIs(t *testing.T) {
 	}{
 		{
 			name:       "invalid TOML",
-			configData: "[otel\nuri = 'broken'",
+			configData: "[api.heartbeat\nuri = 'broken'",
 			wantError:  "decode configuration",
 		},
 		{
 			name:       "invalid endpoint",
-			configData: "[otel]\nuri = 'ftp://telemetry.example.com'",
-			wantError:  "otel.uri",
+			configData: "[api.heartbeat]\nuri = 'ftp://telemetry.example.com'",
+			wantError:  "api.heartbeat.uri",
 		},
 		{
 			name:       "invalid proxy",
