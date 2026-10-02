@@ -11,6 +11,7 @@ License:        Apache-2.0 AND BSD-3-Clause AND GPL-3.0-only AND MIT AND MPL-2.0
 URL:            %{gourl}
 Source0:        %{gosource}
 Source1:        %{archivename}-vendor.tar.bz2
+Source2:        go-vendor-tools.toml
 
 BuildRequires:  systemd-rpm-macros
 %if 0%{?fedora}
@@ -61,9 +62,9 @@ install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/
 %if 0%{?fedora}
 # Only go-vendor-tools are capable of validating the generated license string matches rpm's License field.
 %go_vendor_license_check -c %{S:2}
+%endif
 
 %if %{with check}
-%endif
 # Trigger unit tests, unless explicitly disabled.
 %gocheck
 %endif
