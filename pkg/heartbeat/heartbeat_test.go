@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m-horky/rhc-heartbeat/internal/chrony"
 	"github.com/m-horky/rhc-heartbeat/internal/clock"
@@ -49,12 +50,14 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 		t.Errorf("BootID = %q, want %q", got.BootID, "boot-id")
 	}
 
-	if got.TimeMonotonic != monotonic.Sec {
-		t.Errorf("TimeMonotonic = %d, want %d seconds", got.TimeMonotonic, monotonic.Sec)
+	wantMonotonic := time.Duration(monotonic.Sec)*time.Second + time.Duration(monotonic.Nsec)
+	if got.TimeMonotonic != wantMonotonic {
+		t.Errorf("TimeMonotonic = %s, want %s", got.TimeMonotonic, wantMonotonic)
 	}
 
-	if got.TimeUnix != realtime.Sec {
-		t.Errorf("TimeUnix = %d, want %d seconds", got.TimeUnix, realtime.Sec)
+	wantUnix := time.Unix(realtime.Sec, realtime.Nsec).UTC()
+	if !got.TimeUnix.Equal(wantUnix) {
+		t.Errorf("TimeUnix = %s, want %s", got.TimeUnix, wantUnix)
 	}
 
 	if got.TimeQuality != TimeQuality("sync:0.07") {
@@ -232,8 +235,8 @@ func testSources(runner command.Runner) sources {
 		},
 		readClock: func() (clock.Reading, error) {
 			return clock.Reading{
-				TimeMonotonic: unix.Timespec{Sec: 1},
-				Time:          unix.Timespec{Sec: 1},
+				TimeMonotonic: unix.Timespec{Sec: 1, Nsec: 2},
+				Time:          unix.Timespec{Sec: 1, Nsec: 3},
 			}, nil
 		},
 		runner: runner,
