@@ -1,0 +1,86 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - depguard
+    - durationcheck
+    - dupword
+    - embeddedstructfieldcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - funcorder
+    - funlen
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecknoglobals
+    - gochecksumtype
+    - gocritic
+    - godoclint
+    - gosmopolitan
+    - gosec
+    - godot
+    - govet
+    - ireturn
+    - importas
+    - inamedparam
+    - ineffassign
+    - iface
+    - lll
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - modernize
+    - nestif
+    - nilerr
+    - nilnil
+    - nilnesserr
+    - nosprintfhostport
+    - nonamedreturns
+    - predeclared
+    - sloglint
+    - staticcheck
+    - thelper
+    - unconvert
+    - unused
+    - whitespace
+    - wsl_v5
+    - nlreturn
+    - wrapcheck
+  settings:
+    depguard:
+      rules:
+        pkg_may_import_internal:
+          list-mode: lax
+          files:
+            - "pkg/**"
+          allow:
+            - $gostd
+            - github.com/m-horky/elk/internal/
+  exclusions:
+    rules:
+      # Linux syscall and interface details are intentional in the filesystem adapter.
+      - path: internal/fs
+        linters:
+          - gosec
+          - ireturn
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gci
+    - gofumpt
