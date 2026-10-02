@@ -1,0 +1,5 @@
+- Always run `make fmt` and `make check` after making changes on Go code.
+- Always prefer fixing a linter issue to ignoring it. Every linter ignore line needs to be escalated to the user.
+- You are not allowed to alter .golangci.yml unless told explicitly. Fix the linter violations instead.
+- Every Go method (public AND private) should have a docstring describing _what_ it does.
+- Every Go unit test should additionally have a gherkin statement further explaining the test.
