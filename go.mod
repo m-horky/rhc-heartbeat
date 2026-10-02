@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.3.2
 	go.opentelemetry.io/collector/pdata v1.68.0
 	golang.org/x/sys v0.47.0
-	gopkg.in/ini.v1 v1.67.0
+	gopkg.in/ini.v1 v1.67.3
 )
 
 require (
