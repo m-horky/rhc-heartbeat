@@ -3,6 +3,9 @@
 package fs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,11 +44,18 @@ type FS interface {
 	Open(path string) (File, error)
 }
 
-// Filesystem implements FS.
+// WriteFS extends FS with safe append and atomic replacement operations.
+type WriteFS interface {
+	FS
+	Append(path string, data []byte, perm os.FileMode) error
+	Replace(path string, data []byte, perm os.FileMode) error
+}
+
+// Filesystem implements WriteFS.
 type Filesystem struct{}
 
-// Compile-time validation that Filesystem implements FS.
-var _ FS = Filesystem{}
+// Compile-time validation that Filesystem implements WriteFS.
+var _ WriteFS = Filesystem{}
 
 // openHow is the Linux openat2(2) argument. It is kept here instead of
 // exposing Linux-specific descriptors to callers of this package.
@@ -64,14 +74,14 @@ const (
 
 // openat2 invokes Linux's openat2(2) system call and wraps the returned
 // descriptor in an *os.File. The path is resolved relative to dirfd and the
-// caller supplies the kernel's resolution restrictions.
-func openat2(dirfd int, path string, flags int, resolve uint64) (*os.File, error) {
+// caller supplies the flags, creation mode, and kernel resolution restrictions.
+func openat2(dirfd int, path string, flags int, mode os.FileMode, resolve uint64) (*os.File, error) {
 	name, err := syscall.BytePtrFromString(path)
 	if err != nil {
 		return nil, fmt.Errorf("convert path for openat2: %w", err)
 	}
 
-	how := openHow{Flags: uint64(flags), Mode: 0, Resolve: resolve}
+	how := openHow{Flags: uint64(flags), Mode: uint64(mode.Perm()), Resolve: resolve}
 
 	fd, _, errno := syscall.Syscall6(
 		sysOpenat2,
@@ -89,23 +99,31 @@ func openat2(dirfd int, path string, flags int, resolve uint64) (*os.File, error
 	return os.NewFile(fd, path), nil
 }
 
-// openReadNoSymlinks opens path for reading without following symlinks in
-// either the parent path or the final path component. The final component is
-// resolved relative to the opened parent directory descriptor.
-func openReadNoSymlinks(path string) (*os.File, error) {
+// openParentNoSymlinks opens the parent directory without following symlinks.
+func openParentNoSymlinks(path string) (*os.File, string, error) {
 	cleanPath := filepath.Clean(path)
 	parent, base := filepath.Dir(cleanPath), filepath.Base(cleanPath)
 
-	// Open the parent without following any symlink, then resolve the final
-	// component relative to that directory descriptor. This keeps both the
-	// parent traversal and the final open under openat2 policy.
-	directory, err := openat2(atFDCWD, parent, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, resolveNoSymlinks)
+	directory, err := openat2(atFDCWD, parent,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0, resolveNoSymlinks)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return directory, base, nil
+}
+
+// openReadNoSymlinks opens path for reading without following symlinks in
+// either the parent path or the final path component.
+func openReadNoSymlinks(path string) (*os.File, error) {
+	directory, base, err := openParentNoSymlinks(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = directory.Close() }()
 
-	return openat2(int(directory.Fd()), base, syscall.O_RDONLY|syscall.O_CLOEXEC, resolveNoSymlinks|resolveBeneath)
+	return openat2(int(directory.Fd()), base, syscall.O_RDONLY|syscall.O_CLOEXEC,
+		0, resolveNoSymlinks|resolveBeneath)
 }
 
 // Open opens path for reading and rejects symlinks in every path component.
@@ -152,6 +170,153 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// Append opens path without following symlinks, appends data, and syncs it.
+func (Filesystem) Append(path string, data []byte, perm os.FileMode) error {
+	directory, base, err := openParentNoSymlinks(path)
+	if err != nil {
+		return &os.PathError{Op: "append", Path: path, Err: err}
+	}
+	defer func() { _ = directory.Close() }()
+
+	file, err := openat2(int(directory.Fd()), base,
+		syscall.O_WRONLY|syscall.O_APPEND|syscall.O_CREAT|syscall.O_CLOEXEC,
+		perm, resolveNoSymlinks|resolveBeneath)
+	if err != nil {
+		return &os.PathError{Op: "append", Path: path, Err: err}
+	}
+
+	info, err := file.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = syscall.EINVAL
+	}
+
+	if err == nil {
+		err = file.Chmod(perm.Perm())
+	}
+
+	if err == nil {
+		err = writeAll(file, data)
+	}
+
+	if err == nil {
+		err = file.Sync()
+	}
+
+	closeErr := file.Close()
+
+	if err != nil {
+		return &os.PathError{Op: "append", Path: path, Err: err}
+	}
+
+	if closeErr != nil {
+		return &os.PathError{Op: "close", Path: path, Err: closeErr}
+	}
+
+	if err := directory.Sync(); err != nil {
+		return &os.PathError{Op: "sync directory", Path: filepath.Dir(path), Err: err}
+	}
+
+	return nil
+}
+
+// Replace atomically replaces path with data without following symlinks.
+func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
+	directory, base, err := openParentNoSymlinks(path)
+	if err != nil {
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+	defer func() { _ = directory.Close() }()
+
+	tempName, file, err := createTempAt(directory, perm)
+	if err != nil {
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = syscall.Unlinkat(int(directory.Fd()), tempName)
+		}
+	}()
+
+	if err := writeAll(file, data); err != nil {
+		_ = file.Close()
+
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	if err := file.Chmod(perm.Perm()); err != nil {
+		_ = file.Close()
+
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	if err := file.Close(); err != nil {
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	if err := syscall.Renameat(int(directory.Fd()), tempName, int(directory.Fd()), base); err != nil {
+		return &os.PathError{Op: "replace", Path: path, Err: err}
+	}
+
+	removeTemp = false
+
+	if err := directory.Sync(); err != nil {
+		return &os.PathError{Op: "sync directory", Path: filepath.Dir(path), Err: err}
+	}
+
+	return nil
+}
+
+// createTempAt creates a uniquely named temporary file in directory.
+func createTempAt(directory *os.File, perm os.FileMode) (string, *os.File, error) {
+	for range 10 {
+		random := make([]byte, 12)
+		if _, err := rand.Read(random); err != nil {
+			return "", nil, fmt.Errorf("generate temporary name: %w", err)
+		}
+
+		name := ".rhc-heartbeat-" + hex.EncodeToString(random)
+
+		file, err := openat2(int(directory.Fd()), name,
+			syscall.O_WRONLY|syscall.O_CREAT|syscall.O_EXCL|syscall.O_CLOEXEC,
+			perm, resolveNoSymlinks|resolveBeneath)
+		if err == nil {
+			return name, file, nil
+		}
+
+		if !errors.Is(err, syscall.EEXIST) {
+			return "", nil, err
+		}
+	}
+
+	return "", nil, errors.New("could not allocate temporary file")
+}
+
+// writeAll writes all data to writer or returns the first write error.
+func writeAll(writer io.Writer, data []byte) error {
+	for len(data) > 0 {
+		written, err := writer.Write(data)
+		if err != nil {
+			return fmt.Errorf("write data: %w", err)
+		}
+
+		if written == 0 {
+			return io.ErrShortWrite
+		}
+
+		data = data[written:]
+	}
+
+	return nil
 }
 
 type osFile struct{ *os.File }
