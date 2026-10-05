@@ -1,42 +1,40 @@
-package otlp
+package remotewrite
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
-	"go.opentelemetry.io/collector/pdata/plog"
+	"github.com/m-horky/rhc-heartbeat/pkg/version"
 )
 
 const (
-	requestTimeout  = 10 * time.Second
-	connectTimeout  = 5 * time.Second
-	maxResponseBody = 64 * 1024
+	requestTimeout = 10 * time.Second
+	connectTimeout = 5 * time.Second
 )
 
-// Client sends heartbeat batches to a configured OTLP/HTTP logs endpoint.
+// Client sends heartbeat batches to a Prometheus Remote Write v1 endpoint.
 type Client struct {
 	endpoint string
 	http     *http.Client
 }
 
-// New constructs an OTLP client using the resolved application configuration.
+// New constructs a Remote Write client using the resolved heartbeat configuration.
 func New(cfg config.Config) (*Client, error) {
-	endpoint, err := validateEndpoint(cfg.OTEL.URI)
+	endpoint, err := validateEndpoint(cfg.Heartbeat.URI)
 	if err != nil {
 		return nil, err
 	}
@@ -49,62 +47,41 @@ func New(cfg config.Config) (*Client, error) {
 	return &Client{endpoint: endpoint, http: httpClient}, nil
 }
 
-// Upload encodes and sends the supplied heartbeats as one OTLP/JSON request.
+// Upload encodes and sends the supplied heartbeats as one Snappy-compressed Remote Write request.
 func (client *Client) Upload(ctx context.Context, heartbeats []heartbeat.Heartbeat) error {
 	if client == nil || client.http == nil {
-		return errors.New("upload OTLP logs: missing client")
+		return errors.New("upload Prometheus Remote Write samples: missing client")
 	}
 
 	if len(heartbeats) == 0 {
 		return nil
 	}
 
-	logs := buildLogs(heartbeats, time.Now())
-
-	payload, err := (&plog.JSONMarshaler{}).MarshalLogs(logs)
+	payload, err := encodeHeartbeats(heartbeats)
 	if err != nil {
-		return fmt.Errorf("marshal OTLP/JSON logs: %w", err)
+		return err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.endpoint, bytes.NewReader(payload))
+	compressed := snappy.Encode(nil, payload)
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.endpoint, bytes.NewReader(compressed))
 	if err != nil {
-		return fmt.Errorf("create OTLP request: %w", err)
+		return fmt.Errorf("create Prometheus Remote Write request: %w", err)
 	}
 
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Encoding", "snappy")
+	request.Header.Set("Content-Type", "application/x-protobuf")
+	request.Header.Set("User-Agent", "rhc-heartbeat/"+version.Version)
+	request.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 	response, err := client.http.Do(request)
 	if err != nil {
-		return fmt.Errorf("send OTLP request: %w", err)
+		return fmt.Errorf("send Prometheus Remote Write request: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody+1))
-	if err != nil {
-		return fmt.Errorf("read OTLP response: %w", err)
-	}
-
-	if len(responseBody) > maxResponseBody {
-		return fmt.Errorf("read OTLP response: body exceeds %d bytes", maxResponseBody)
-	}
-
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("OTLP endpoint returned %s: %s", response.Status, strings.TrimSpace(string(responseBody)))
-	}
-
-	if len(responseBody) == 0 {
-		return nil
-	}
-
-	var result exportLogsResponse
-	if err := json.Unmarshal(responseBody, &result); err != nil {
-		return fmt.Errorf("decode OTLP response: %w", err)
-	}
-
-	if result.PartialSuccess != nil &&
-		(result.PartialSuccess.RejectedLogRecords > 0 || result.PartialSuccess.ErrorMessage != "") {
-		return fmt.Errorf("OTLP endpoint partially rejected logs: rejected=%d message=%q",
-			result.PartialSuccess.RejectedLogRecords, result.PartialSuccess.ErrorMessage)
+		return fmt.Errorf("prometheus Remote Write endpoint returned %s", response.Status)
 	}
 
 	return nil
@@ -117,28 +94,27 @@ func (client *Client) CloseIdleConnections() {
 	}
 }
 
-// validateEndpoint parses and validates a configured OTLP endpoint URI.
+// validateEndpoint parses and validates a configured Remote Write endpoint URI.
 func validateEndpoint(endpoint string) (string, error) {
 	parsed, err := url.ParseRequestURI(endpoint)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("invalid OTLP endpoint URL %q", endpoint)
+		return "", fmt.Errorf("invalid Prometheus Remote Write endpoint URL %q", endpoint)
 	}
 
 	return endpoint, nil
 }
 
-// newHTTPClient creates an HTTP client configured with the endpoint TLS and proxy settings.
+// newHTTPClient creates an HTTP client configured with endpoint TLS and proxy settings.
 func newHTTPClient(cfg config.Config, endpoint string) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// Do not inherit environment proxy
 	transport.Proxy = nil
 	transport.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
 	transport.IdleConnTimeout = 30 * time.Second
 
 	parsedEndpoint, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("parse OTLP endpoint URL: %w", err)
+		return nil, fmt.Errorf("parse Prometheus Remote Write endpoint URL: %w", err)
 	}
 
 	if parsedEndpoint.Scheme == "https" {
@@ -200,10 +176,10 @@ func newTLSConfig(cfg config.Config) (*tls.Config, error) {
 		constants.PathFromEnv(constants.ClientKeyPathEnv, constants.DefaultClientKeyPath),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("load OTLP client certificate: %w", err)
+		return nil, fmt.Errorf("load Remote Write client certificate: %w", err)
 	}
 
-	rootCAs, err := loadRootCAs(cfg.OTEL.CAPath)
+	rootCAs, err := loadRootCAs(cfg.Heartbeat.CAPath)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +189,7 @@ func newTLSConfig(cfg config.Config) (*tls.Config, error) {
 		Certificates: []tls.Certificate{certificate},
 		RootCAs:      rootCAs,
 		//nolint:gosec // Configuration intentionally controls server certificate validation.
-		InsecureSkipVerify: !cfg.OTEL.TLSVerify,
+		InsecureSkipVerify: !cfg.Heartbeat.TLSVerify,
 	}, nil
 }
 
@@ -234,11 +210,11 @@ func loadRootCAs(caPath string) (*x509.CertPool, error) {
 
 	caData, err := (fs.Filesystem{}).Read(caPath)
 	if err != nil {
-		return nil, fmt.Errorf("read OTLP CA certificate %s: %w", caPath, err)
+		return nil, fmt.Errorf("read Remote Write CA certificate %s: %w", caPath, err)
 	}
 
 	if !rootCAs.AppendCertsFromPEM(caData) {
-		return nil, fmt.Errorf("read OTLP CA certificate %s: no certificates found", caPath)
+		return nil, fmt.Errorf("read Remote Write CA certificate %s: no certificates found", caPath)
 	}
 
 	return rootCAs, nil
@@ -275,13 +251,4 @@ func configureProxy(transport *http.Transport, proxy config.Proxy) error {
 	transport.Proxy = http.ProxyURL(proxyURL)
 
 	return nil
-}
-
-type exportLogsResponse struct {
-	PartialSuccess *partialSuccess `json:"partialSuccess"`
-}
-
-type partialSuccess struct {
-	RejectedLogRecords int64  `json:"rejectedLogRecords,string"`
-	ErrorMessage       string `json:"errorMessage"`
 }

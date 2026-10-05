@@ -19,14 +19,14 @@ const (
 	// DefaultPendingCachePath is the default persistent cache file for undelivered heartbeats.
 	DefaultPendingCachePath = "/var/lib/rhc/heartbeat.jsonl"
 
-	// ClientCertificatePathEnv selects the client certificate used for OTLP mutual TLS.
+	// ClientCertificatePathEnv selects the client certificate used for Remote Write mutual TLS.
 	ClientCertificatePathEnv = "RHC_HEARTBEAT_CLIENT_CERT_PATH"
-	// DefaultClientCertificatePath is the default client certificate used for OTLP mutual TLS.
+	// DefaultClientCertificatePath is the default client certificate used for Remote Write mutual TLS.
 	DefaultClientCertificatePath = "/etc/pki/consumer/cert.pem"
 
-	// ClientKeyPathEnv selects the client key used for OTLP mutual TLS.
+	// ClientKeyPathEnv selects the client key used for Remote Write mutual TLS.
 	ClientKeyPathEnv = "RHC_HEARTBEAT_CLIENT_KEY_PATH"
-	// DefaultClientKeyPath is the default client key used for OTLP mutual TLS.
+	// DefaultClientKeyPath is the default client key used for Remote Write mutual TLS.
 	DefaultClientKeyPath = "/etc/pki/consumer/key.pem"
 )
 

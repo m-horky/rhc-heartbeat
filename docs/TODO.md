@@ -12,14 +12,11 @@
   - [x] Construct the Heartbeat object
 - [ ] Cache heartbeats locally
   - [x] Store typed heartbeat objects as one JSON value per line in `/var/lib/rhc/heartbeat.jsonl`
-  - [ ] Attempt to upload each new heartbeat before caching it; cache only failed uploads
-  - [ ] Heartbeats are uploaded in order they happened
-    - We should check whether this matters with Loki
-    - We should check whether this matters with different backend implementations
-  - [ ] Remove a cached batch only after confirmed successful delivery; retain it on failure or ambiguous results
+  - [ ] Keep a single heartbeat event per boot
   - [ ] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
-- [ ] Flexibility
-  - [x] CLI input allows for an arbitrary `--kind` string value, defaulting to `ping`
+- [x] Protocol
+  - [x] Use ProtoBuf (google.golang.org/protobuf)
+  - [x] Use Prometheus Remote Write
 - [ ] Productize
   - [x] Systemd service and timer executing every ten minutes (aligned with boot time)
   - [x] Systemd service executing on system events (`systemd.special(7)`)
@@ -27,7 +24,5 @@
   - [ ] Man page for the binary
   - [ ] SELinux policy code
   - [ ] SELinux policy subpackage
-- [ ] Server
-  - [ ] Use Grafana Loki format
-  - [ ] org_id acts as a low-cardinality stream label
-  - [ ] The rest of the heartbeat (RHSM UUID, boot ID, time) is high-cardinality
+  - [ ] Process locking: Create a PID-level lock that sleeps until the lock lifts
+  - [ ] Correctly derive Observatorium URL from the Candlepin URL

@@ -40,7 +40,7 @@ type rhsmProxy struct {
 
 type rhsmSettings struct {
 	CandlepinURI    string
-	OTELURI         string
+	RemoteWriteURI  string
 	Insecure        bool
 	InsecurePresent bool
 	CAPath          string
@@ -83,7 +83,7 @@ func mapRHSM(legacy rhsmConfiguration) (rhsmSettings, error) {
 		return rhsmSettings{}, rhsmError("server.insecure", err)
 	}
 
-	candlepinURI, otelURI, err := mapRHSMServer(legacy.Server, insecurePresent)
+	candlepinURI, remoteWriteURI, err := mapRHSMServer(legacy.Server, insecurePresent)
 	if err != nil {
 		return rhsmSettings{}, err
 	}
@@ -95,7 +95,7 @@ func mapRHSM(legacy rhsmConfiguration) (rhsmSettings, error) {
 
 	return rhsmSettings{
 		CandlepinURI:    candlepinURI,
-		OTELURI:         otelURI,
+		RemoteWriteURI:  remoteWriteURI,
 		Insecure:        insecure,
 		InsecurePresent: insecurePresent,
 		CAPath:          strings.TrimSpace(legacy.RHSM.RepoCACert),
@@ -103,7 +103,7 @@ func mapRHSM(legacy rhsmConfiguration) (rhsmSettings, error) {
 	}, nil
 }
 
-// mapRHSMServer builds Candlepin and OTEL URIs from the legacy server section.
+// mapRHSMServer builds Candlepin and Remote Write URIs from the legacy server section.
 func mapRHSMServer(server rhsmServer, insecurePresent bool) (string, string, error) {
 	host := strings.TrimSpace(server.Hostname)
 	if host == "" {
@@ -128,12 +128,12 @@ func mapRHSMServer(server rhsmServer, insecurePresent bool) (string, string, err
 		return "", "", rhsmError("server", err)
 	}
 
-	return candlepin, appendOTELLogsPath(candlepin), nil
+	return candlepin, appendRemoteWritePath(candlepin), nil
 }
 
-// appendOTELLogsPath appends the OTLP logs route to a validated Candlepin URI.
-func appendOTELLogsPath(candlepinURI string) string {
-	return strings.TrimRight(candlepinURI, "/") + "/otel/v1/logs"
+// appendRemoteWritePath appends the Remote Write route to a validated Candlepin URI.
+func appendRemoteWritePath(candlepinURI string) string {
+	return strings.TrimRight(candlepinURI, "/") + "/api/v1/write"
 }
 
 // mapRHSMProxy converts legacy proxy fields into HTTP transport settings.

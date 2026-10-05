@@ -19,7 +19,7 @@ Format Go code with `make fmt`.
 
 ## Testing
 
-For local end-to-end testing, Podman is required to run the OpenTelemetry Collector used by the test setup.
+For local end-to-end testing, Podman is required to run Prometheus with its Remote Write receiver enabled.
 
 ```shell
 $ make server &

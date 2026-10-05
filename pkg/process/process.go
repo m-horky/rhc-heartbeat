@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/m-horky/rhc-heartbeat/internal/otlp"
+	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
@@ -27,9 +27,9 @@ func New(cfg config.Config, pending *cache.Cache) (*Processor, error) {
 		return nil, errors.New("create heartbeat processor: missing cache")
 	}
 
-	client, err := otlp.New(cfg)
+	client, err := remotewrite.New(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create OTLP client: %w", err)
+		return nil, fmt.Errorf("create Prometheus Remote Write client: %w", err)
 	}
 
 	return &Processor{
@@ -64,7 +64,7 @@ func (processor *Processor) Process(ctx context.Context, hb heartbeat.Heartbeat)
 	return nil
 }
 
-// CloseIdleConnections closes the processor's idle OTLP HTTP connections.
+// CloseIdleConnections closes the processor's idle Remote Write HTTP connections.
 func (processor *Processor) CloseIdleConnections() {
 	if processor != nil && processor.closeIdleConnections != nil {
 		processor.closeIdleConnections()

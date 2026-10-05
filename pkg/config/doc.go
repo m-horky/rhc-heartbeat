@@ -9,6 +9,6 @@
 //	if err != nil {
 //		return err
 //	}
-//	endpoint := cfg.OTEL.URI
+//	endpoint := cfg.Heartbeat.URI
 //	_ = endpoint
 package config

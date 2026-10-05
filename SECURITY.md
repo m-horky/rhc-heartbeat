@@ -2,7 +2,7 @@
 
 This is an upstream project and is not affiliated with any Red Hat product.
 
-The program collects system heartbeats and sends them to an OTLP/HTTP endpoint.
+The program collects system heartbeats and sends them to a Prometheus Remote Write endpoint.
 
 ## Reporting a vulnerability
 

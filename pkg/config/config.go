@@ -13,7 +13,7 @@ import (
 // Config is the resolved heartbeat configuration.
 type Config = internalconfig.Config
 
-// Endpoint describes the OTLP/HTTP endpoint and its TLS settings.
+// Endpoint describes the heartbeat upload endpoint and its TLS settings.
 type Endpoint = internalconfig.Endpoint
 
 // HTTPConfig contains outgoing HTTP transport settings.
@@ -51,9 +51,9 @@ func Get() (Config, error) {
 	}
 
 	slog.Debug("resolved heartbeat configuration",
-		"otel.uri", cfg.OTEL.URI,
-		"otel.tls_verify", cfg.OTEL.TLSVerify,
-		"otel.ca_path", cfg.OTEL.CAPath,
+		"heartbeat.uri", cfg.Heartbeat.URI,
+		"heartbeat.tls_verify", cfg.Heartbeat.TLSVerify,
+		"heartbeat.ca_path", cfg.Heartbeat.CAPath,
 		"http.proxy.uri", cfg.HTTP.Proxy.URI,
 		"http.proxy.user", proxyCredentialLogValue,
 		"http.proxy.password", proxyCredentialLogValue,

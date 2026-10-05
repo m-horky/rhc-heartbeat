@@ -24,7 +24,7 @@ BuildRequires:  askalono-cli
 %description
 rhc-heartbeat collects system uptime, wall-clock time, and
 time-synchronization status. It uploads the heartbeat to an
-OpenTelemetry endpoint.
+Prometheus Remote Write endpoint.
 
 %prep
 # Unpack Source0 and set up the go build directory. Since -k is not passed in,
@@ -33,7 +33,7 @@ OpenTelemetry endpoint.
 # Unpack Source1 into the build tree, providing the vendor/ directory.
 %setup -q -T -D -a1 -n %{name}-%{version}
 # Apply patches, if present
-# %autopatch -p1
+#autopatch -p1
 
 %generate_buildrequires
 %if %{with go_vendor_tools}

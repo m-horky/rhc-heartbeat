@@ -4,16 +4,10 @@ go 1.26.7
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	go.opentelemetry.io/collector/pdata v1.68.0
+	github.com/golang/snappy v0.0.4
 	golang.org/x/sys v0.48.0
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/ini.v1 v1.67.3
 )
 
-require (
-	github.com/hashicorp/go-version v1.9.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
-	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
-	go.opentelemetry.io/collector/featuregate v1.68.0 // indirect
-	go.uber.org/multierr v1.11.0 // indirect
-)
+require github.com/stretchr/testify v1.12.1 // indirect

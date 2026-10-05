@@ -10,11 +10,11 @@ import (
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// TestParseKind verifies the command accepts arbitrary heartbeat kind strings with ping as the default.
+// TestParseKind verifies the command accepts only supported heartbeat kinds and defaults to ping.
 //
-// Given command-line arguments with the default or a custom kind
+// Given command-line arguments with a supported kind or malformed input
 // When the kind is parsed
-// Then the supplied value is returned unchanged, while malformed arguments are rejected.
+// Then a supported enum value is returned and unsupported values are rejected.
 func TestParseKind(t *testing.T) {
 	t.Parallel()
 
@@ -25,9 +25,11 @@ func TestParseKind(t *testing.T) {
 		wantError bool
 	}{
 		{name: "default", want: heartbeat.KindPing},
-		{name: "ping", args: []string{"--kind=ping"}, want: heartbeat.KindPing},
+		{name: "on", args: []string{"--kind=on"}, want: heartbeat.KindOn},
 		{name: "off", args: []string{"--kind", "off"}, want: heartbeat.KindOff},
-		{name: "arbitrary kind", args: []string{"--kind=systemd:custom event / 123"}, want: "systemd:custom event / 123"},
+		{name: "ping", args: []string{"--kind=ping"}, want: heartbeat.KindPing},
+		{name: "arbitrary kind", args: []string{"--kind=systemd:custom event / 123"}, wantError: true},
+		{name: "empty kind", args: []string{"--kind="}, wantError: true},
 		{name: "unexpected positional argument", args: []string{"unexpected"}, wantError: true},
 		{name: "unknown option", args: []string{"--unknown"}, wantError: true},
 	}

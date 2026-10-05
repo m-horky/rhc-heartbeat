@@ -16,11 +16,23 @@ import (
 type Kind string
 
 const (
+	// KindOn identifies a heartbeat reporting that the system is able to send updates.
+	KindOn Kind = "on"
+	// KindOff identifies that the system is not expected to be able to send updates for the foreseeable future.
+	KindOff Kind = "off"
 	// KindPing identifies a periodic heartbeat.
 	KindPing Kind = "ping"
-	// KindOff identifies a heartbeat collected during shutdown.
-	KindOff Kind = "off"
 )
+
+// Valid reports whether kind is one of the supported heartbeat kinds.
+func (kind Kind) Valid() bool {
+	switch kind {
+	case KindOn, KindOff, KindPing:
+		return true
+	default:
+		return false
+	}
+}
 
 // Heartbeat contains the system identity and time data collected for one event.
 // TimeMonotonic is CLOCK_MONOTONIC elapsed time since boot, TimeBoottime is
@@ -55,6 +67,10 @@ func Get(ctx context.Context, kind Kind) (Heartbeat, error) {
 
 // collect reads each heartbeat source and combines the results into one value.
 func collect(ctx context.Context, kind Kind, source sources) (Heartbeat, error) {
+	if !kind.Valid() {
+		return Heartbeat{}, fmt.Errorf("collect heartbeat: invalid kind %q", kind)
+	}
+
 	if err := ctx.Err(); err != nil {
 		return Heartbeat{}, fmt.Errorf("collect heartbeat: %w", err)
 	}

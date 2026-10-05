@@ -1,4 +1,4 @@
-// Package main demonstrates collecting and exporting one heartbeat over OTLP/HTTP.
+// Package main demonstrates collecting and uploading one heartbeat using Prometheus Remote Write.
 package main
 
 import (
@@ -7,23 +7,23 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/m-horky/rhc-heartbeat/internal/otlp"
+	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// main runs the heartbeat export example and reports failures.
+// main runs the Remote Write example and reports failures.
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if err := run(context.Background()); err != nil {
-		slog.Error("heartbeat export failed", "err", err)
+		slog.Error("heartbeat upload failed", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-// run collects one periodic heartbeat and exports it using the resolved configuration.
+// run collects one periodic heartbeat and uploads it using the resolved configuration.
 func run(ctx context.Context) error {
 	cfg, err := config.Get()
 	if err != nil {
@@ -35,9 +35,9 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}
 
-	client, err := otlp.New(cfg)
+	client, err := remotewrite.New(cfg)
 	if err != nil {
-		return fmt.Errorf("create OTLP client: %w", err)
+		return fmt.Errorf("create Prometheus Remote Write client: %w", err)
 	}
 	defer client.CloseIdleConnections()
 
@@ -45,7 +45,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("upload heartbeat: %w", err)
 	}
 
-	slog.Info("heartbeat exported", "endpoint", cfg.OTEL.URI)
+	slog.Info("heartbeat uploaded", "endpoint", cfg.Heartbeat.URI)
 
 	return nil
 }

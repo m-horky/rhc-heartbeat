@@ -73,12 +73,12 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("process heartbeat: %w", err)
 	}
 
-	slog.Info("heartbeat processing completed", "kind", kind, "endpoint", cfg.OTEL.URI)
+	slog.Info("heartbeat processing completed", "kind", kind, "endpoint", cfg.Heartbeat.URI)
 
 	return nil
 }
 
-// parseKind parses the arbitrary heartbeat kind string supplied on the command line.
+// parseKind parses and validates the heartbeat kind supplied on the command line.
 func parseKind(args []string) (heartbeat.Kind, error) {
 	flags := flag.NewFlagSet("rhc-heartbeat", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -92,7 +92,13 @@ func parseKind(args []string) (heartbeat.Kind, error) {
 		return "", fmt.Errorf("unexpected positional arguments: %s", strings.Join(flags.Args(), " "))
 	}
 
-	return heartbeat.Kind(*kindValue), nil
+	kind := heartbeat.Kind(*kindValue)
+	if !kind.Valid() {
+		return "", fmt.Errorf("invalid --kind %q: must be one of %q, %q, or %q", kind,
+			heartbeat.KindOn, heartbeat.KindOff, heartbeat.KindPing)
+	}
+
+	return kind, nil
 }
 
 // cacheAfterSetupFailure retains a collected heartbeat when configuration or processor setup fails.
@@ -108,6 +114,5 @@ func cacheAfterSetupFailure(pending *cache.Cache, hb heartbeat.Heartbeat, setupE
 
 // writeUsage writes the supported command syntax to the supplied writer.
 func writeUsage(writer io.Writer) {
-	_, _ = fmt.Fprintln(writer, "Usage: rhc-heartbeat [--kind STRING]")
-	_, _ = fmt.Fprintln(writer, "Collect and upload one heartbeat, then backfill pending records.")
+	_, _ = fmt.Fprintln(writer, "usage: rhc-heartbeat [--kind on|off|ping]")
 }
