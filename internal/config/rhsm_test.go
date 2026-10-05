@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// TestMapRHSMBuildsOTELURIFromCandlepin verifies RHSM fields are translated to endpoint and proxy settings.
+// TestMapRHSMBuildsRemoteWriteURIFromCandlepin verifies RHSM fields are translated to endpoint and proxy settings.
 //
 // Given server and proxy settings, when mapping runs, then it builds origin-based URIs and carries TLS data.
-func TestMapRHSMBuildsOTELURIFromCandlepin(t *testing.T) {
+func TestMapRHSMBuildsRemoteWriteURIFromCandlepin(t *testing.T) {
 	t.Parallel()
 
 	got, err := mapRHSM(rhsmConfiguration{
@@ -24,8 +24,8 @@ func TestMapRHSMBuildsOTELURIFromCandlepin(t *testing.T) {
 		t.Errorf("CandlepinURI = %q", got.CandlepinURI)
 	}
 
-	if got.OTELURI != "https://satellite.example.com:8443/otel/v1/logs" {
-		t.Errorf("OTELURI = %q", got.OTELURI)
+	if got.RemoteWriteURI != "https://satellite.example.com:8443/api/v1/write" {
+		t.Errorf("RemoteWriteURI = %q", got.RemoteWriteURI)
 	}
 
 	if !got.Insecure || !got.InsecurePresent {
@@ -43,9 +43,9 @@ func TestMapRHSMBuildsOTELURIFromCandlepin(t *testing.T) {
 	}
 }
 
-// TestMapRHSMSupportsIPv6AndNoPrefix verifies Candlepin and OTEL URI construction for IPv6 hosts.
+// TestMapRHSMSupportsIPv6AndNoPrefix verifies Candlepin and Remote Write URI construction for IPv6 hosts.
 //
-// Given an IPv6 hostname without a prefix, when mapping runs, then it brackets the host and appends the logs path.
+// Given an IPv6 hostname without a prefix, when mapping runs, then it brackets the host and appends the write path.
 func TestMapRHSMSupportsIPv6AndNoPrefix(t *testing.T) {
 	t.Parallel()
 
@@ -54,8 +54,8 @@ func TestMapRHSMSupportsIPv6AndNoPrefix(t *testing.T) {
 		t.Fatalf("mapRHSM() error = %v", err)
 	}
 
-	if got.CandlepinURI != "https://[2001:db8::1]:443" || got.OTELURI != "https://[2001:db8::1]:443/otel/v1/logs" {
-		t.Errorf("URIs = (%q, %q)", got.CandlepinURI, got.OTELURI)
+	if got.CandlepinURI != "https://[2001:db8::1]:443" || got.RemoteWriteURI != "https://[2001:db8::1]:443/api/v1/write" {
+		t.Errorf("URIs = (%q, %q)", got.CandlepinURI, got.RemoteWriteURI)
 	}
 }
 

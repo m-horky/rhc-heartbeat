@@ -68,23 +68,40 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 	}
 }
 
-// TestCollectAcceptsArbitraryKind verifies collection preserves nonstandard heartbeat kind strings.
+// TestKindValid verifies the heartbeat kind enum accepts only its declared values.
 //
-// Given successful heartbeat sources and an arbitrary kind
-// When a heartbeat is collected
-// Then collection succeeds and preserves that kind in the heartbeat.
-func TestCollectAcceptsArbitraryKind(t *testing.T) {
+// Given each declared kind and an unsupported string
+// When validity is checked
+// Then only on, off, and ping are accepted.
+func TestKindValid(t *testing.T) {
 	t.Parallel()
 
-	const wantKind = Kind("systemd:custom event / 123")
-
-	got, err := collect(context.Background(), wantKind, testSources())
-	if err != nil {
-		t.Fatalf("collect() error = %v", err)
+	for _, test := range []struct {
+		kind Kind
+		want bool
+	}{
+		{kind: KindOn, want: true},
+		{kind: KindOff, want: true},
+		{kind: KindPing, want: true},
+		{kind: Kind("custom"), want: false},
+		{kind: Kind(""), want: false},
+	} {
+		if got := test.kind.Valid(); got != test.want {
+			t.Errorf("Kind(%q).Valid() = %t, want %t", test.kind, got, test.want)
+		}
 	}
+}
 
-	if got.Kind != wantKind {
-		t.Fatalf("Kind = %q, want %q", got.Kind, wantKind)
+// TestCollectRejectsInvalidKind verifies collection rejects kinds outside the declared enum.
+//
+// Given successful heartbeat sources and an unsupported kind
+// When a heartbeat is collected
+// Then collection fails before returning a heartbeat.
+func TestCollectRejectsInvalidKind(t *testing.T) {
+	t.Parallel()
+
+	if _, err := collect(context.Background(), Kind("custom"), testSources()); err == nil {
+		t.Fatal("collect() error = nil, want invalid kind error")
 	}
 }
 

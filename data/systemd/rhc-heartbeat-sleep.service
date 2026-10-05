@@ -1,5 +1,5 @@
 [Unit]
-Description=Send heartbeats before and after system sleep
+Description=Report update availability before and after system sleep
 DefaultDependencies=no
 ConditionPathExists=/etc/pki/consumer/cert.pem
 ConditionPathExists=/etc/pki/consumer/key.pem
@@ -13,8 +13,8 @@ Type=oneshot
 User=root
 RemainAfterExit=yes
 StateDirectory=rhc
-ExecStart=/usr/bin/rhc-heartbeat --kind=sleep
-ExecStop=/usr/bin/rhc-heartbeat --kind=wakeup
+ExecStart=/usr/bin/rhc-heartbeat --kind=off
+ExecStop=/usr/bin/rhc-heartbeat --kind=on
 TimeoutStartSec=10s
 TimeoutStopSec=10s
 

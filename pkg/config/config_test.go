@@ -10,7 +10,8 @@ import (
 
 // TestGetUsesConfiguredRHSMPath verifies the RHSM path environment override.
 //
-// Given a temporary RHSM configuration path, when Get loads configuration, then it uses the RHSM-derived endpoint.
+// Given a temporary RHSM configuration path, when Get loads configuration, then it uses
+// the RHSM-derived Remote Write endpoint.
 func TestGetUsesConfiguredRHSMPath(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "heartbeat.conf")
@@ -29,8 +30,8 @@ func TestGetUsesConfiguredRHSMPath(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 
-	want := "https://satellite.example.com:8443/otel/v1/logs"
-	if got.OTEL.URI != want {
-		t.Errorf("Get().OTEL.URI = %q, want %q", got.OTEL.URI, want)
+	want := "https://satellite.example.com:8443/api/v1/write"
+	if got.Heartbeat.URI != want {
+		t.Errorf("Get().Heartbeat.URI = %q, want %q", got.Heartbeat.URI, want)
 	}
 }

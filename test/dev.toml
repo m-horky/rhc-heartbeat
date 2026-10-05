@@ -1,2 +1,2 @@
 [api.heartbeat]
-uri = "http://otel:4318/v1/logs"
+uri = "http://10.88.0.1:9090/api/v1/write"

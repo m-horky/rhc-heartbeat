@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
-	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 // TestProcessCachesNewHeartbeatAfterUploadFailure verifies that an undelivered new heartbeat is persisted.
@@ -230,12 +230,13 @@ func TestProcessBackfillsCachedHeartbeatsInBatches(t *testing.T) {
 	}
 }
 
-// TestNewProcessorUploadsThroughConfiguredOTLP verifies the processor wires its OTLP client to the upload workflow.
+// TestNewProcessorUploadsThroughConfiguredRemoteWrite verifies the processor wires its Remote Write
+// client to the upload workflow.
 //
-// Given a configured OTLP endpoint and one cached heartbeat
+// Given a configured Remote Write endpoint and one cached heartbeat
 // When the processor handles a new heartbeat
 // Then it uploads the new heartbeat separately, backfills the cache, and clears delivered records.
-func TestNewProcessorUploadsThroughConfiguredOTLP(t *testing.T) {
+func TestNewProcessorUploadsThroughConfiguredRemoteWrite(t *testing.T) {
 	t.Parallel()
 
 	batchSizes := make(chan int, 2)
@@ -246,38 +247,45 @@ func TestNewProcessorUploadsThroughConfiguredOTLP(t *testing.T) {
 			t.Errorf("read request body: %v", err)
 		}
 
-		logs, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(payload)
-		if err != nil {
-			t.Errorf("decode OTLP/JSON request: %v", err)
-		} else {
-			batchSizes <- logs.ResourceLogs().Len()
+		if request.Header.Get("Content-Encoding") != "snappy" ||
+			request.Header.Get("Content-Type") != "application/x-protobuf" {
+			t.Errorf("Remote Write headers = %v", request.Header)
 		}
 
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"partialSuccess":{}}`))
+		decoded, err := snappy.Decode(nil, payload)
+		if err != nil {
+			t.Errorf("decode Snappy Remote Write request: %v", err)
+		} else if len(decoded) == 0 {
+			t.Error("Remote Write protobuf payload is empty")
+		}
+
+		batchSizes <- len(decoded)
 	}))
 	defer server.Close()
 
 	pending := cache.New(filepath.Join(t.TempDir(), "heartbeat.jsonl"))
-	if err := pending.Append(heartbeat.Heartbeat{HostID: "cached"}); err != nil {
+
+	cachedHeartbeat := heartbeat.Heartbeat{HostID: "cached", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing}
+	if err := pending.Append(cachedHeartbeat); err != nil {
 		t.Fatalf("Append() error = %v", err)
 	}
 
 	processor, err := New(config.Config{
-		OTEL: config.Endpoint{URI: server.URL + "/v1/logs", TLSVerify: true},
+		Heartbeat: config.Endpoint{URI: server.URL + "/api/v1/write", TLSVerify: true},
 	}, pending)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	defer processor.CloseIdleConnections()
 
-	if err := processor.Process(context.Background(), heartbeat.Heartbeat{HostID: "new"}); err != nil {
+	newHeartbeat := heartbeat.Heartbeat{HostID: "new", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing}
+	if err := processor.Process(context.Background(), newHeartbeat); err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
 
 	for range 2 {
-		if got := <-batchSizes; got != 1 {
-			t.Errorf("OTLP request contained %d records, want one", got)
+		if got := <-batchSizes; got == 0 {
+			t.Error("Remote Write request contained an empty protobuf payload")
 		}
 	}
 

@@ -14,8 +14,8 @@ import (
 
 // Config is the resolved heartbeat configuration.
 type Config struct {
-	OTEL Endpoint   `toml:"otel"`
-	HTTP HTTPConfig `toml:"http"`
+	Heartbeat Endpoint   `toml:"heartbeat"`
+	HTTP      HTTPConfig `toml:"http"`
 }
 
 // HTTPConfig contains transport settings.
@@ -23,7 +23,7 @@ type HTTPConfig struct {
 	Proxy Proxy `toml:"proxy"`
 }
 
-// Endpoint is the OTLP/HTTP logs endpoint and its TLS settings.
+// Endpoint is the configured heartbeat upload endpoint and its TLS settings.
 type Endpoint struct {
 	URI       string `toml:"uri"`
 	TLSVerify bool   `toml:"tls-verify"`
@@ -66,7 +66,7 @@ type partialProxy struct {
 // using filesystem for file access. Missing files are allowed; errors reading or
 // parsing present files are returned.
 func LoadFromPaths(filesystem fs.FS, configPath, rhsmPath string) (Config, error) {
-	cfg := Config{OTEL: Endpoint{TLSVerify: true}}
+	cfg := Config{Heartbeat: Endpoint{TLSVerify: true}}
 
 	legacy, err := loadRHSM(filesystem, rhsmPath)
 	if err != nil {
@@ -99,15 +99,15 @@ func LoadFromPaths(filesystem fs.FS, configPath, rhsmPath string) (Config, error
 // applyRHSM applies non-empty legacy settings as configuration fallbacks.
 func (cfg Config) applyRHSM(legacy rhsmSettings) Config {
 	if legacy.CandlepinURI != "" {
-		cfg.OTEL.URI = legacy.OTELURI
+		cfg.Heartbeat.URI = legacy.RemoteWriteURI
 	}
 
 	if legacy.InsecurePresent {
-		cfg.OTEL.TLSVerify = !legacy.Insecure
+		cfg.Heartbeat.TLSVerify = !legacy.Insecure
 	}
 
 	if legacy.CAPath != "" {
-		cfg.OTEL.CAPath = legacy.CAPath
+		cfg.Heartbeat.CAPath = legacy.CAPath
 	}
 
 	if legacy.Proxy.URI != "" || legacy.Proxy.User != "" || legacy.Proxy.Password != "" {
@@ -134,7 +134,7 @@ func (cfg *Config) apply(p partialConfig) error {
 	return nil
 }
 
-// applyEndpoint validates and applies an OTEL endpoint override.
+// applyEndpoint validates and applies the api.heartbeat Remote Write endpoint override.
 func (cfg *Config) applyEndpoint(p partialEndpoint) error {
 	if p.URI != nil {
 		uri, err := applyURI(*p.URI, validateEndpointURI)
@@ -142,15 +142,15 @@ func (cfg *Config) applyEndpoint(p partialEndpoint) error {
 			return fmt.Errorf("api.heartbeat.uri: %w", err)
 		}
 
-		cfg.OTEL.URI = uri
+		cfg.Heartbeat.URI = uri
 	}
 
 	if p.TLSVerify != nil {
-		cfg.OTEL.TLSVerify = *p.TLSVerify
+		cfg.Heartbeat.TLSVerify = *p.TLSVerify
 	}
 
 	if p.CAPath != nil {
-		cfg.OTEL.CAPath = strings.TrimSpace(*p.CAPath)
+		cfg.Heartbeat.CAPath = strings.TrimSpace(*p.CAPath)
 	}
 
 	return nil

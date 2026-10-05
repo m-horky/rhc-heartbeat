@@ -22,16 +22,19 @@ build:
 	mkdir -p build
 	go build -o build/config ./examples/config
 	go build -o build/heartbeat ./examples/heartbeat
-	go build -o build/otlp-upload ./examples/otlp-upload
+	go build -o build/remote-write-upload ./examples/remote-write-upload
 	go build -o build/rhc-heartbeat ./cmd/rhc-heartbeat
 
 .PHONY: server
 server:
-	podman run -it \
-	--name otel --replace \
-	--network podman \
-	-v ./test/otelcol.yaml:/etc/otelcol/config.yaml:ro,Z \
-	ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector:latest
+	podman run -it --rm --replace \
+	    --name prometheus \
+	    --network podman \
+	    -p "0.0.0.0:9090:9090/tcp" \
+	    -v "./test/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z" \
+	    "docker.io/prom/prometheus:latest" \
+	    --config.file=/etc/prometheus/prometheus.yml \
+	    --web.enable-remote-write-receiver
 
 .PHONY: archive
 archive:

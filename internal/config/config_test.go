@@ -30,7 +30,7 @@ proxy_user = rhsm-user
 proxy_password = rhsm-password
 `)
 	writeConfigTestFile(filesystem.files, configPath, `[api.heartbeat]
-uri = "https://telemetry.example.com/custom/v1/logs"
+uri = "https://telemetry.example.com/api/v1/write"
 tls-verify = true
 
 [http.proxy]
@@ -42,8 +42,8 @@ user = "site-user"
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
 
-	if got.OTEL.URI != "https://telemetry.example.com/custom/v1/logs" || !got.OTEL.TLSVerify {
-		t.Errorf("OTEL = %+v, want explicit configuration", got.OTEL)
+	if got.Heartbeat.URI != "https://telemetry.example.com/api/v1/write" || !got.Heartbeat.TLSVerify {
+		t.Errorf("Heartbeat = %+v, want explicit configuration", got.Heartbeat)
 	}
 
 	proxy := got.HTTP.Proxy
@@ -80,7 +80,7 @@ proxy_password = rhsm-password
 	writeConfigTestFile(filesystem.files, configPath, `# [api.heartbeat]
 # uri = "https://commented.example.com/v1/logs"
 [api.heartbeat]
-uri = "https://configured.example.com/v1/logs"
+uri = "https://configured.example.com/api/v1/write"
 # tls-verify = true
 # ca-path = "/commented/ca.pem"
 
@@ -95,12 +95,12 @@ uri = "https://configured.example.com/v1/logs"
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
 
-	if got.OTEL.URI != "https://configured.example.com/v1/logs" {
-		t.Errorf("OTEL.URI = %q, want active TOML value", got.OTEL.URI)
+	if got.Heartbeat.URI != "https://configured.example.com/api/v1/write" {
+		t.Errorf("Heartbeat.URI = %q, want active TOML value", got.Heartbeat.URI)
 	}
 
-	if got.OTEL.TLSVerify || got.OTEL.CAPath != "/etc/pki/rhsm-ca.pem" {
-		t.Errorf("OTEL = %+v, want non-overridden RHSM values", got.OTEL)
+	if got.Heartbeat.TLSVerify || got.Heartbeat.CAPath != "/etc/pki/rhsm-ca.pem" {
+		t.Errorf("Heartbeat = %+v, want non-overridden RHSM values", got.Heartbeat)
 	}
 
 	if got.HTTP.Proxy.URI != "https://proxy.example.com:3128" ||
@@ -113,16 +113,16 @@ uri = "https://configured.example.com/v1/logs"
 		t.Fatalf("LoadFromPaths() with missing TOML error = %v", err)
 	}
 
-	if missingConfig.OTEL.URI != "https://satellite.example.com:8443/otel/v1/logs" ||
-		missingConfig.OTEL.TLSVerify || missingConfig.OTEL.CAPath != "/etc/pki/rhsm-ca.pem" {
+	if missingConfig.Heartbeat.URI != "https://satellite.example.com:8443/api/v1/write" ||
+		missingConfig.Heartbeat.TLSVerify || missingConfig.Heartbeat.CAPath != "/etc/pki/rhsm-ca.pem" {
 		t.Errorf("configuration with missing TOML = %+v, want RHSM-derived values", missingConfig)
 	}
 }
 
-// TestLoadFromPathsUsesRHSMDerivedOTELURI verifies OTEL endpoint construction from Candlepin settings.
+// TestLoadFromPathsUsesRHSMRemoteWriteURI verifies Remote Write endpoint construction from Candlepin settings.
 //
-// Given a Candlepin host and API prefix, when loading runs, then it ignores the prefix and appends the OTEL logs path.
-func TestLoadFromPathsUsesRHSMDerivedOTELURI(t *testing.T) {
+// Given a Candlepin host and API prefix, when loading runs, then it ignores the prefix and appends the write path.
+func TestLoadFromPathsUsesRHSMRemoteWriteURI(t *testing.T) {
 	t.Parallel()
 
 	rhsmPath := "/virtual/rhsm.conf"
@@ -138,12 +138,12 @@ prefix = /redhat_access
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
 
-	if got.OTEL.URI != "https://satellite.example.com:443/otel/v1/logs" {
-		t.Errorf("OTEL.URI = %q", got.OTEL.URI)
+	if got.Heartbeat.URI != "https://satellite.example.com:443/api/v1/write" {
+		t.Errorf("Heartbeat.URI = %q", got.Heartbeat.URI)
 	}
 
-	if !got.OTEL.TLSVerify {
-		t.Error("OTEL.TLSVerify = false, want secure default")
+	if !got.Heartbeat.TLSVerify {
+		t.Error("Heartbeat.TLSVerify = false, want secure default")
 	}
 }
 
@@ -170,8 +170,8 @@ port = 443
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
 
-	if got.OTEL.URI != "" {
-		t.Errorf("OTEL.URI = %q, want explicit empty override", got.OTEL.URI)
+	if got.Heartbeat.URI != "" {
+		t.Errorf("Heartbeat.URI = %q, want explicit empty override", got.Heartbeat.URI)
 	}
 }
 
@@ -188,7 +188,7 @@ func TestLoadFromPathsAllowsMissingFiles(t *testing.T) {
 		t.Fatalf("LoadFromPaths() error = %v", err)
 	}
 
-	if got.OTEL.URI != "" || got.HTTP.Proxy.URI != "" {
+	if got.Heartbeat.URI != "" || got.HTTP.Proxy.URI != "" {
 		t.Errorf("configuration = %+v, want empty configuration", got)
 	}
 }

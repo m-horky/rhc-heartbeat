@@ -1,5 +1,5 @@
 [Unit]
-Description=Send a heartbeat during system shutdown
+Description=Report that further system updates are not expected
 DefaultDependencies=no
 Before=shutdown.target
 ConditionPathExists=/etc/pki/consumer/cert.pem
