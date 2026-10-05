@@ -48,56 +48,6 @@ func TestFilesystemReadRejectsDirectory(t *testing.T) {
 	}
 }
 
-// TestFilesystemReadRejectsSymlink verifies that Read does not follow symlinks.
-//
-// Given a symlink to a regular file, when Filesystem.Read reads the symlink,
-// then it returns an error.
-func TestFilesystemReadRejectsSymlink(t *testing.T) {
-	t.Parallel()
-
-	directory := t.TempDir()
-	target := filepath.Join(directory, "target.conf")
-	link := filepath.Join(directory, "link.conf")
-
-	if err := os.WriteFile(target, []byte("configuration"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := (Filesystem{}).Read(link)
-	if err == nil {
-		t.Fatal("Read() succeeded for a symlink")
-	}
-}
-
-// TestFilesystemStatRejectsSymlink verifies that Stat rejects symlinks.
-//
-// Given a symlink to a regular file, when Filesystem.Stat inspects the symlink,
-// then it returns an error instead of target metadata.
-func TestFilesystemStatRejectsSymlink(t *testing.T) {
-	t.Parallel()
-
-	directory := t.TempDir()
-	target := filepath.Join(directory, "target.conf")
-	link := filepath.Join(directory, "link.conf")
-
-	if err := os.WriteFile(target, []byte("configuration"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := (Filesystem{}).Stat(link)
-	if err == nil {
-		t.Fatal("Stat() succeeded for a symlink")
-	}
-}
-
 // TestFilesystemReadMissingFile verifies that missing files preserve the
 // os.ErrNotExist condition.
 //
@@ -179,38 +129,5 @@ func TestFilesystemReplaceAtomicallyReplaces(t *testing.T) {
 
 	if gotMode := info.Mode().Perm(); gotMode != 0o640 {
 		t.Fatalf("file mode = %#o, want %#o", gotMode, 0o640)
-	}
-}
-
-// TestFilesystemAppendRejectsSymlink verifies that Append does not follow a final symlink.
-//
-// Given a symlink to a regular file, when Filesystem.Append opens the link,
-// then it returns an error and leaves the target unchanged.
-func TestFilesystemAppendRejectsSymlink(t *testing.T) {
-	t.Parallel()
-
-	directory := t.TempDir()
-	target := filepath.Join(directory, "target")
-	link := filepath.Join(directory, "link")
-
-	if err := os.WriteFile(target, []byte("unchanged"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.Symlink(target, link); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := (Filesystem{}).Append(link, []byte("changed"), 0o640); err == nil {
-		t.Fatal("Append() succeeded for a symlink")
-	}
-
-	got, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-
-	if string(got) != "unchanged" {
-		t.Fatalf("target contents = %q, want unchanged", got)
 	}
 }

@@ -3,27 +3,22 @@
 package fs
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"syscall"
-	"unsafe"
 )
 
-// FileInfo contains the filesystem information needed by the configuration
-// trust policy. Its shape follows the information exposed by os.FileInfo while
-// keeping ownership extraction inside this package.
+// FileInfo contains the filesystem information about a file.
+// Its shape follows the information exposed by os.FileInfo
+// while keeping ownership inside this package.
 type FileInfo struct {
 	Mode      os.FileMode
 	UID       uint32
 	GID       uint32
 	IsDir     bool
 	IsRegular bool
-	IsSymlink bool
 }
 
 // File is the read-only subset of *os.File used by consumers of FS.
@@ -33,10 +28,8 @@ type File interface {
 	Close() error
 }
 
-// FS is the read-only filesystem contract used by the loader. Read reads a
-// validated regular file. ReadDir has the same entry type and ordering
-// semantics as os.ReadDir. Stat rejects symlinks. Open rejects symlinks in
-// every path component and returns a handle to the opened file.
+// FS is the filesystem contract used by loaders. Read validates that the
+// resolved target is a regular file.
 type FS interface {
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]os.DirEntry, error)
@@ -44,7 +37,7 @@ type FS interface {
 	Open(path string) (File, error)
 }
 
-// WriteFS extends FS with safe append and atomic replacement operations.
+// WriteFS extends FS with append and atomic replacement operations.
 type WriteFS interface {
 	FS
 	Append(path string, data []byte, perm os.FileMode) error
@@ -57,88 +50,18 @@ type Filesystem struct{}
 // Compile-time validation that Filesystem implements WriteFS.
 var _ WriteFS = Filesystem{}
 
-// openHow is the Linux openat2(2) argument. It is kept here instead of
-// exposing Linux-specific descriptors to callers of this package.
-type openHow struct {
-	Flags   uint64
-	Mode    uint64
-	Resolve uint64
-}
-
-const (
-	resolveNoSymlinks = 0x04
-	resolveBeneath    = 0x08
-	atFDCWD           = -100
-	sysOpenat2        = 437 // SYS_openat2 on Linux
-)
-
-// openat2 invokes Linux's openat2(2) system call and wraps the returned
-// descriptor in an *os.File. The path is resolved relative to dirfd and the
-// caller supplies the flags, creation mode, and kernel resolution restrictions.
-func openat2(dirfd int, path string, flags int, mode os.FileMode, resolve uint64) (*os.File, error) {
-	name, err := syscall.BytePtrFromString(path)
-	if err != nil {
-		return nil, fmt.Errorf("convert path for openat2: %w", err)
-	}
-
-	how := openHow{Flags: uint64(flags), Mode: uint64(mode.Perm()), Resolve: resolve}
-
-	fd, _, errno := syscall.Syscall6(
-		sysOpenat2,
-		uintptr(int64(dirfd)),
-		uintptr(unsafe.Pointer(name)),
-		uintptr(unsafe.Pointer(&how)),
-		unsafe.Sizeof(how),
-		0,
-		0,
-	)
-	if errno != 0 {
-		return nil, errno
-	}
-
-	return os.NewFile(fd, path), nil
-}
-
-// openParentNoSymlinks opens the parent directory without following symlinks.
-func openParentNoSymlinks(path string) (*os.File, string, error) {
-	cleanPath := filepath.Clean(path)
-	parent, base := filepath.Dir(cleanPath), filepath.Base(cleanPath)
-
-	directory, err := openat2(atFDCWD, parent,
-		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0, resolveNoSymlinks)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return directory, base, nil
-}
-
-// openReadNoSymlinks opens path for reading without following symlinks in
-// either the parent path or the final path component.
-func openReadNoSymlinks(path string) (*os.File, error) {
-	directory, base, err := openParentNoSymlinks(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = directory.Close() }()
-
-	return openat2(int(directory.Fd()), base, syscall.O_RDONLY|syscall.O_CLOEXEC,
-		0, resolveNoSymlinks|resolveBeneath)
-}
-
-// Open opens path for reading and rejects symlinks in every path component.
-// The returned handle must be closed by the caller.
+// Open opens path for reading. The returned handle must be closed by the caller.
 func (Filesystem) Open(path string) (File, error) {
-	file, err := openReadNoSymlinks(path)
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
 	return osFile{file}, nil
 }
 
-// Read opens path, verifies that it is a regular file, and reads its
-// contents.
+// Read opens path, verifies that its resolved target is a regular file, and
+// reads its contents.
 func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	file, err := filesystem.Open(path)
 	if err != nil {
@@ -152,7 +75,7 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	if !info.IsRegular || info.IsSymlink {
+	if !info.IsRegular {
 		_ = file.Close()
 
 		return nil, &os.PathError{Op: "read", Path: path, Err: syscall.EISDIR}
@@ -172,17 +95,9 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	return data, nil
 }
 
-// Append opens path without following symlinks, appends data, and syncs it.
+// Append opens path, appends data, and syncs both the file and its containing directory.
 func (Filesystem) Append(path string, data []byte, perm os.FileMode) error {
-	directory, base, err := openParentNoSymlinks(path)
-	if err != nil {
-		return &os.PathError{Op: "append", Path: path, Err: err}
-	}
-	defer func() { _ = directory.Close() }()
-
-	file, err := openat2(int(directory.Fd()), base,
-		syscall.O_WRONLY|syscall.O_APPEND|syscall.O_CREAT|syscall.O_CLOEXEC,
-		perm, resolveNoSymlinks|resolveBeneath)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, perm.Perm())
 	if err != nil {
 		return &os.PathError{Op: "append", Path: path, Err: err}
 	}
@@ -214,48 +129,42 @@ func (Filesystem) Append(path string, data []byte, perm os.FileMode) error {
 		return &os.PathError{Op: "close", Path: path, Err: closeErr}
 	}
 
-	if err := directory.Sync(); err != nil {
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
 		return &os.PathError{Op: "sync directory", Path: filepath.Dir(path), Err: err}
 	}
 
 	return nil
 }
 
-// Replace atomically replaces path with data without following symlinks.
+// Replace atomically writes data at path.
 func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
-	directory, base, err := openParentNoSymlinks(path)
-	if err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
-	}
-	defer func() { _ = directory.Close() }()
+	directory := filepath.Dir(path)
 
-	tempName, file, err := createTempAt(directory, perm)
+	file, err := os.CreateTemp(directory, ".rhc-heartbeat-*")
 	if err != nil {
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
+	tempPath := file.Name()
 	removeTemp := true
+
 	defer func() {
+		_ = file.Close()
+
 		if removeTemp {
-			_ = syscall.Unlinkat(int(directory.Fd()), tempName)
+			_ = os.Remove(tempPath)
 		}
 	}()
 
 	if err := writeAll(file, data); err != nil {
-		_ = file.Close()
-
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
 	if err := file.Chmod(perm.Perm()); err != nil {
-		_ = file.Close()
-
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
-
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
@@ -263,42 +172,38 @@ func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
-	if err := syscall.Renameat(int(directory.Fd()), tempName, int(directory.Fd()), base); err != nil {
+	if err := os.Rename(tempPath, path); err != nil {
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
 	removeTemp = false
 
-	if err := directory.Sync(); err != nil {
-		return &os.PathError{Op: "sync directory", Path: filepath.Dir(path), Err: err}
+	if err := syncDirectory(directory); err != nil {
+		return &os.PathError{Op: "sync directory", Path: directory, Err: err}
 	}
 
 	return nil
 }
 
-// createTempAt creates a uniquely named temporary file in directory.
-func createTempAt(directory *os.File, perm os.FileMode) (string, *os.File, error) {
-	for range 10 {
-		random := make([]byte, 12)
-		if _, err := rand.Read(random); err != nil {
-			return "", nil, fmt.Errorf("generate temporary name: %w", err)
-		}
-
-		name := ".rhc-heartbeat-" + hex.EncodeToString(random)
-
-		file, err := openat2(int(directory.Fd()), name,
-			syscall.O_WRONLY|syscall.O_CREAT|syscall.O_EXCL|syscall.O_CLOEXEC,
-			perm, resolveNoSymlinks|resolveBeneath)
-		if err == nil {
-			return name, file, nil
-		}
-
-		if !errors.Is(err, syscall.EEXIST) {
-			return "", nil, err
-		}
+// syncDirectory syncs directory metadata after a filesystem update.
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
 	}
 
-	return "", nil, errors.New("could not allocate temporary file")
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+
+	if syncErr != nil {
+		return fmt.Errorf("sync directory: %w", syncErr)
+	}
+
+	if closeErr != nil {
+		return fmt.Errorf("close directory: %w", closeErr)
+	}
+
+	return nil
 }
 
 // writeAll writes all data to writer or returns the first write error.
@@ -332,7 +237,7 @@ func (f osFile) Stat() (FileInfo, error) {
 }
 
 // metadata converts standard-library file information into the package's
-// platform-neutral metadata representation.
+// filesystem metadata representation.
 func metadata(info os.FileInfo) FileInfo {
 	mode := info.Mode()
 
@@ -342,7 +247,6 @@ func metadata(info os.FileInfo) FileInfo {
 		GID:       0,
 		IsDir:     info.IsDir(),
 		IsRegular: mode.IsRegular(),
-		IsSymlink: mode&os.ModeSymlink != 0,
 	}
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 		m.UID, m.GID = stat.Uid, stat.Gid
@@ -352,7 +256,7 @@ func metadata(info os.FileInfo) FileInfo {
 }
 
 // ReadDir returns the entries in path in the same sorted order as
-// os.ReadDir. It does not follow entries while enumerating them.
+// os.ReadDir.
 func (Filesystem) ReadDir(path string) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -362,15 +266,11 @@ func (Filesystem) ReadDir(path string) ([]os.DirEntry, error) {
 	return entries, nil
 }
 
-// Stat returns metadata for path and rejects symlinks.
+// Stat returns metadata for the resolved target of path.
 func (Filesystem) Stat(path string) (FileInfo, error) {
-	info, err := os.Lstat(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return FileInfo{}, &os.PathError{Op: "stat", Path: path, Err: err}
-	}
-
-	if info.Mode()&os.ModeSymlink != 0 {
-		return FileInfo{}, &os.PathError{Op: "stat", Path: path, Err: syscall.ELOOP}
 	}
 
 	return metadata(info), nil
