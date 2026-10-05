@@ -1,0 +1,12 @@
+[Unit]
+Description=Run rhc-heartbeat periodically
+Wants=network-online.target
+After=network-online.target
+
+[Timer]
+Unit=rhc-heartbeat.service
+OnBootSec=30s
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

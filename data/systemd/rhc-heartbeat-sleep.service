@@ -1,0 +1,46 @@
+[Unit]
+Description=Send heartbeats before and after system sleep
+DefaultDependencies=no
+ConditionPathExists=/etc/pki/consumer/cert.pem
+ConditionPathExists=/etc/pki/consumer/key.pem
+Wants=network-online.target
+After=network-online.target
+Before=sleep.target
+StopWhenUnneeded=yes
+
+[Service]
+Type=oneshot
+User=root
+RemainAfterExit=yes
+StateDirectory=rhc
+ExecStart=/usr/bin/rhc-heartbeat --kind=sleep
+ExecStop=/usr/bin/rhc-heartbeat --kind=wakeup
+TimeoutStartSec=10s
+TimeoutStopSec=10s
+
+NoNewPrivileges=yes
+UMask=0077
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rhc
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=sleep.target
