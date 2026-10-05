@@ -34,7 +34,7 @@ func buildLogs(heartbeats []heartbeat.Heartbeat, observedAt time.Time) plog.Logs
 		record.Body().SetStr("Heartbeat collected")
 
 		attributes := record.Attributes()
-		attributes.PutStr("heartbeat.trigger", string(hb.Trigger))
+		attributes.PutStr("heartbeat.kind", string(hb.Kind))
 		attributes.PutInt("heartbeat.time_monotonic", hb.TimeMonotonic.Nanoseconds())
 		attributes.PutInt("heartbeat.time_boottime", hb.TimeBoottime.Nanoseconds())
 	}

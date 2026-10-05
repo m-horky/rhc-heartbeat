@@ -36,6 +36,6 @@ type Heartbeat struct {
   WallTime time.Time
   BootTime time.Duration
   MonoTime time.Duration
-  Trigger  Trigger // 'ping' or 'off' enum
+  Kind     string // arbitrary heartbeat kind, defaulting to 'ping'
 }
 ```

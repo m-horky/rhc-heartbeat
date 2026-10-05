@@ -10,24 +10,24 @@ import (
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// TestParseTrigger verifies the command accepts only the supported heartbeat triggers.
+// TestParseKind verifies the command accepts arbitrary heartbeat kind strings with ping as the default.
 //
-// Given command-line arguments with the default, ping, off, or an invalid trigger
-// When the trigger is parsed
-// Then supported values are returned and invalid input is rejected.
-func TestParseTrigger(t *testing.T) {
+// Given command-line arguments with the default or a custom kind
+// When the kind is parsed
+// Then the supplied value is returned unchanged, while malformed arguments are rejected.
+func TestParseKind(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name      string
 		args      []string
-		want      heartbeat.Trigger
+		want      heartbeat.Kind
 		wantError bool
 	}{
-		{name: "default", want: heartbeat.TriggerPing},
-		{name: "ping", args: []string{"--trigger=ping"}, want: heartbeat.TriggerPing},
-		{name: "off", args: []string{"--trigger", "off"}, want: heartbeat.TriggerOff},
-		{name: "invalid trigger", args: []string{"--trigger=unknown"}, wantError: true},
+		{name: "default", want: heartbeat.KindPing},
+		{name: "ping", args: []string{"--kind=ping"}, want: heartbeat.KindPing},
+		{name: "off", args: []string{"--kind", "off"}, want: heartbeat.KindOff},
+		{name: "arbitrary kind", args: []string{"--kind=systemd:custom event / 123"}, want: "systemd:custom event / 123"},
 		{name: "unexpected positional argument", args: []string{"unexpected"}, wantError: true},
 		{name: "unknown option", args: []string{"--unknown"}, wantError: true},
 	}
@@ -36,36 +36,36 @@ func TestParseTrigger(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := parseTrigger(test.args)
+			got, err := parseKind(test.args)
 			if test.wantError {
 				if err == nil {
-					t.Fatal("parseTrigger() error = nil, want error")
+					t.Fatal("parseKind() error = nil, want error")
 				}
 
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("parseTrigger() error = %v", err)
+				t.Fatalf("parseKind() error = %v", err)
 			}
 
 			if got != test.want {
-				t.Fatalf("parseTrigger() = %q, want %q", got, test.want)
+				t.Fatalf("parseKind() = %q, want %q", got, test.want)
 			}
 		})
 	}
 }
 
-// TestParseTriggerHelp verifies the help option is surfaced for successful usage output.
+// TestParseKindHelp verifies the help option is surfaced for successful usage output.
 //
 // Given the help flag
 // When command arguments are parsed
 // Then the parser reports the standard help sentinel without treating it as invalid input.
-func TestParseTriggerHelp(t *testing.T) {
+func TestParseKindHelp(t *testing.T) {
 	t.Parallel()
 
-	if _, err := parseTrigger([]string{"--help"}); !errors.Is(err, flag.ErrHelp) {
-		t.Fatalf("parseTrigger() error = %v, want flag.ErrHelp", err)
+	if _, err := parseKind([]string{"--help"}); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("parseKind() error = %v, want flag.ErrHelp", err)
 	}
 }
 
@@ -78,7 +78,7 @@ func TestCacheAfterSetupFailureRetainsHeartbeat(t *testing.T) {
 	t.Parallel()
 
 	pending := cache.New(filepath.Join(t.TempDir(), "heartbeat.jsonl"))
-	want := heartbeat.Heartbeat{HostID: "host-123", Trigger: heartbeat.TriggerPing}
+	want := heartbeat.Heartbeat{HostID: "host-123", Kind: heartbeat.KindPing}
 
 	if err := cacheAfterSetupFailure(pending, want, errors.New("setup failed")); err != nil {
 		t.Fatalf("cacheAfterSetupFailure() error = %v, want nil after successful cache", err)

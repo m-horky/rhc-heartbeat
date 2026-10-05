@@ -40,7 +40,7 @@ func execute(args []string) error {
 
 // run collects one heartbeat, loads configuration, and processes it with the pending cache.
 func run(ctx context.Context, args []string) error {
-	trigger, err := parseTrigger(args)
+	kind, err := parseKind(args)
 	if errors.Is(err, flag.ErrHelp) {
 		writeUsage(os.Stdout)
 
@@ -53,7 +53,7 @@ func run(ctx context.Context, args []string) error {
 
 	pending := cache.New(constants.PathFromEnv(constants.PendingCachePathEnv, constants.DefaultPendingCachePath))
 
-	hb, err := heartbeat.Get(ctx, trigger)
+	hb, err := heartbeat.Get(ctx, kind)
 	if err != nil {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}
@@ -73,16 +73,16 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("process heartbeat: %w", err)
 	}
 
-	slog.Info("heartbeat processing completed", "trigger", trigger, "endpoint", cfg.OTEL.URI)
+	slog.Info("heartbeat processing completed", "kind", kind, "endpoint", cfg.OTEL.URI)
 
 	return nil
 }
 
-// parseTrigger parses command flags and validates the requested heartbeat trigger.
-func parseTrigger(args []string) (heartbeat.Trigger, error) {
+// parseKind parses the arbitrary heartbeat kind string supplied on the command line.
+func parseKind(args []string) (heartbeat.Kind, error) {
 	flags := flag.NewFlagSet("rhc-heartbeat", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	triggerValue := flags.String("trigger", string(heartbeat.TriggerPing), "heartbeat trigger: ping or off")
+	kindValue := flags.String("kind", string(heartbeat.KindPing), "kind of heartbeat to collect")
 
 	if err := flags.Parse(args); err != nil {
 		return "", fmt.Errorf("parse command flags: %w", err)
@@ -92,12 +92,7 @@ func parseTrigger(args []string) (heartbeat.Trigger, error) {
 		return "", fmt.Errorf("unexpected positional arguments: %s", strings.Join(flags.Args(), " "))
 	}
 
-	trigger := heartbeat.Trigger(*triggerValue)
-	if trigger != heartbeat.TriggerPing && trigger != heartbeat.TriggerOff {
-		return "", fmt.Errorf("invalid heartbeat trigger %q: want ping or off", trigger)
-	}
-
-	return trigger, nil
+	return heartbeat.Kind(*kindValue), nil
 }
 
 // cacheAfterSetupFailure retains a collected heartbeat when configuration or processor setup fails.
@@ -113,6 +108,6 @@ func cacheAfterSetupFailure(pending *cache.Cache, hb heartbeat.Heartbeat, setupE
 
 // writeUsage writes the supported command syntax to the supplied writer.
 func writeUsage(writer io.Writer) {
-	_, _ = fmt.Fprintln(writer, "Usage: rhc-heartbeat [--trigger ping|off]")
+	_, _ = fmt.Fprintln(writer, "Usage: rhc-heartbeat [--kind STRING]")
 	_, _ = fmt.Fprintln(writer, "Collect and upload one heartbeat, then backfill pending records.")
 }

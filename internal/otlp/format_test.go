@@ -56,11 +56,11 @@ func TestBuildLogsMarshalsHeartbeatAsOTLPJSON(t *testing.T) {
 		TimeMonotonic: 42*time.Second + 123*time.Nanosecond,
 		TimeBoottime:  45*time.Second + 789*time.Nanosecond,
 		TimeUnix:      time.Unix(1_700_000_000, 123),
-		Trigger:       heartbeat.TriggerPing,
+		Kind:          heartbeat.KindPing,
 	}
 	second := heartbeat.Heartbeat{
 		HostID: "host-123", HostOrg: "org-456", BootID: "boot-new",
-		TimeUnix: time.Unix(1_700_000_100, 456), Trigger: heartbeat.TriggerOff,
+		TimeUnix: time.Unix(1_700_000_100, 456), Kind: heartbeat.KindOff,
 	}
 	observedAt := time.Unix(1_700_000_001, 0)
 
@@ -123,7 +123,7 @@ func assertFormattedHeartbeat(
 	monotonic := findAttribute(record.Attributes, "heartbeat.time_monotonic").Value.IntValue
 
 	boottime := findAttribute(record.Attributes, "heartbeat.time_boottime").Value.IntValue
-	if findAttribute(record.Attributes, "heartbeat.trigger").Value.StringValue != string(hb.Trigger) ||
+	if findAttribute(record.Attributes, "heartbeat.kind").Value.StringValue != string(hb.Kind) ||
 		monotonic != strconv.FormatInt(hb.TimeMonotonic.Nanoseconds(), 10) ||
 		boottime != strconv.FormatInt(hb.TimeBoottime.Nanoseconds(), 10) {
 		t.Errorf("heartbeat record attributes were not serialized")
