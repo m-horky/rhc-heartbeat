@@ -1,0 +1,33 @@
+# Execution steps
+
+- [x] Configuration
+  - [x] Parse rhsm.conf
+  - [x] Convert rhsm.conf into a public-facing Config object with inferred content
+  - [x] Allow environment variables to override rhsm.conf
+- [x] Heartbeat fields
+  - [x] Read consumer certificate to obtain UUID and ORG ID
+  - [x] Read kernel boot ID
+  - [x] Read monotonic uptime and wall-clock time
+  - [x] Read CLOCK_BOOTTIME
+  - [x] Construct the Heartbeat object
+- [ ] Cache heartbeats locally
+  - [x] Store typed heartbeat objects as one JSON value per line in `/var/lib/rhc/heartbeat.jsonl`
+  - [ ] Attempt to upload each new heartbeat before caching it; cache only failed uploads
+  - [ ] Heartbeats are uploaded in order they happened
+    - We should check whether this matters with Loki
+    - We should check whether this matters with different backend implementations
+  - [ ] Remove a cached batch only after confirmed successful delivery; retain it on failure or ambiguous results
+  - [ ] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
+- [ ] Flexibility
+  - [ ] CLI input allows for free-form `--reason` string value, defaulting to `timer`
+  - [ ] `--reason` is `halt`, `sleep` or other appropriate identifiers (related to `systemd.special(7)`)
+- [ ] Productize
+  - [ ] Systemd service and timer executing every ten minutes (aligned with boot time)
+  - [ ] Systemd service executing on system events (`systemd.special(7)`)
+  - [ ] Man page for the binary
+  - [ ] SELinux policy code
+  - [ ] SELinux policy subpackage
+- [ ] Server
+  - [ ] Use Grafana Loki format
+  - [ ] org_id acts as a low-cardinality stream label
+  - [ ] The rest of the heartbeat (RHSM UUID, boot ID, time) is high-cardinality
