@@ -1,4 +1,6 @@
 %bcond check 1
+%bcond_with go_vendor_tools
+# go-vendor-tools are only available in Fedora.
 
 %global goipath github.com/m-horky/rhc-heartbeat
 Version:        0.1.0
@@ -14,8 +16,7 @@ Source1:        %{archivename}-vendor.tar.bz2
 Source2:        go-vendor-tools.toml
 
 BuildRequires:  systemd-rpm-macros
-%if 0%{?fedora}
-# These build-time dependencies only exist for Fedora.
+%if %{with go_vendor_tools}
 BuildRequires:  go-vendor-tools
 BuildRequires:  askalono-cli
 %endif
@@ -35,8 +36,7 @@ OpenTelemetry endpoint.
 # %autopatch -p1
 
 %generate_buildrequires
-%if 0%{?fedora}
-# Generate data for the licence check go-vendor-tools provides.
+%if %{with go_vendor_tools}
 %go_vendor_license_buildrequires -c %{S:2}
 %endif
 
@@ -47,8 +47,7 @@ for cmd in cmd/* ; do
 done
 
 %install
-%if 0%{?fedora}
-# Only go-vendor-tools are capable of collecting and packaging licenses for our dependencies.
+%if %{with go_vendor_tools}
 %go_vendor_license_install -c %{S:2}
 %endif
 
@@ -65,8 +64,7 @@ install -m 0755 -vd                     %{buildroot}%{_unitdir}
 install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_unitdir}/
 
 %check
-%if 0%{?fedora}
-# Only go-vendor-tools are capable of validating the generated license string matches rpm's License field.
+%if %{with go_vendor_tools}
 %go_vendor_license_check -c %{S:2}
 %endif
 
@@ -75,8 +73,7 @@ install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_u
 %gocheck
 %endif
 
-%if 0%{?fedora}
-# With go-vendor-tools, we also get a list of dependency licenses.
+%if %{with go_vendor_tools}
 %global extra_files -f %{go_vendor_license_filelist}
 %else
 %global extra_files %{nil}
