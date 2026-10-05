@@ -1,9 +1,9 @@
 %bcond check 1
-%bcond_with go_vendor_tools
 # go-vendor-tools are only available in Fedora.
+%bcond_with go_vendor_tools
 
 %global goipath github.com/m-horky/rhc-heartbeat
-Version:        0.1.0
+Version:        0.2.0
 %gometa -L -f
 
 Name:           rhc-heartbeat
