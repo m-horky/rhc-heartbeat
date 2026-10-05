@@ -21,8 +21,9 @@
 - [ ] Flexibility
   - [x] CLI input allows for an arbitrary `--kind` string value, defaulting to `ping`
 - [ ] Productize
-  - [ ] Systemd service and timer executing every ten minutes (aligned with boot time)
-  - [ ] Systemd service executing on system events (`systemd.special(7)`)
+  - [x] Systemd service and timer executing every ten minutes (aligned with boot time)
+  - [x] Systemd service executing on system events (`systemd.special(7)`)
+  - [x] `systemd-analyze security "$SERVICE"` reports a score of 4.0 or lower
   - [ ] Man page for the binary
   - [ ] SELinux policy code
   - [ ] SELinux policy subpackage

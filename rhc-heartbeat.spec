@@ -60,6 +60,10 @@ install -m 0755 -vp %{gobuilddir}/bin/* %{buildroot}%{_bindir}/
 install -m 0755 -vd                     %{buildroot}%{_prefix}/lib/rhc/
 install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/
 
+# Systemd units
+install -m 0755 -vd                     %{buildroot}%{_unitdir}
+install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_unitdir}/
+
 %check
 %if 0%{?fedora}
 # Only go-vendor-tools are capable of validating the generated license string matches rpm's License field.
@@ -81,6 +85,11 @@ install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/
 %files %{extra_files}
 # Binaries
 %{_bindir}/rhc-heartbeat
+# Systemd units
+%{_unitdir}/rhc-heartbeat.timer
+%{_unitdir}/rhc-heartbeat.service
+%{_unitdir}/rhc-heartbeat-sleep.service
+%{_unitdir}/rhc-heartbeat-off.service
 # Documentation
 %doc README.md SECURITY.md
 

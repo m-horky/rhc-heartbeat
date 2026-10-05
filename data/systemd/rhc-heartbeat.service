@@ -1,0 +1,41 @@
+[Unit]
+Description=Send a system heartbeat
+ConditionPathExists=/etc/pki/consumer/cert.pem
+ConditionPathExists=/etc/pki/consumer/key.pem
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=5min
+StartLimitBurst=4
+
+[Service]
+Type=oneshot
+User=root
+StateDirectory=rhc
+ExecStart=/usr/bin/rhc-heartbeat --kind=ping
+TimeoutStartSec=10s
+Restart=on-failure
+RestartSec=60s
+
+NoNewPrivileges=yes
+UMask=0077
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/rhc
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
