@@ -6,13 +6,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestReadReturnsRawTimespecs verifies both system clocks are returned without conversion.
+// TestReadReturnsTimespecs verifies all system clocks are returned without conversion.
 //
-// Given a running Linux system, when reading the clocks, then both raw timespec values are valid and current.
-func TestReadReturnsRawTimespecs(t *testing.T) {
+// Given a running Linux system, when reading the clocks, then all timespec values are valid and current.
+func TestReadReturnsTimespecs(t *testing.T) {
 	t.Parallel()
 
-	beforeMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC_RAW)
+	beforeMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC)
+	beforeBoottime := readClockForTest(t, unix.CLOCK_BOOTTIME)
 	beforeRealtime := readClockForTest(t, unix.CLOCK_REALTIME)
 
 	got, err := Read()
@@ -20,11 +21,16 @@ func TestReadReturnsRawTimespecs(t *testing.T) {
 		t.Fatalf("Read() error = %v", err)
 	}
 
-	afterMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC_RAW)
+	afterMonotonic := readClockForTest(t, unix.CLOCK_MONOTONIC)
+	afterBoottime := readClockForTest(t, unix.CLOCK_BOOTTIME)
 	afterRealtime := readClockForTest(t, unix.CLOCK_REALTIME)
 
 	if !validTimespec(got.TimeMonotonic) {
 		t.Errorf("TimeMonotonic = %+v, want valid timespec", got.TimeMonotonic)
+	}
+
+	if !validTimespec(got.TimeBoottime) {
+		t.Errorf("TimeBoottime = %+v, want valid timespec", got.TimeBoottime)
 	}
 
 	if !validTimespec(got.Time) {
@@ -33,6 +39,10 @@ func TestReadReturnsRawTimespecs(t *testing.T) {
 
 	if timespecBefore(got.TimeMonotonic, beforeMonotonic) || timespecBefore(afterMonotonic, got.TimeMonotonic) {
 		t.Errorf("TimeMonotonic = %+v, want value between %+v and %+v", got.TimeMonotonic, beforeMonotonic, afterMonotonic)
+	}
+
+	if timespecBefore(got.TimeBoottime, beforeBoottime) || timespecBefore(afterBoottime, got.TimeBoottime) {
+		t.Errorf("TimeBoottime = %+v, want value between %+v and %+v", got.TimeBoottime, beforeBoottime, afterBoottime)
 	}
 
 	if timespecBefore(got.Time, beforeRealtime) || timespecBefore(afterRealtime, got.Time) {

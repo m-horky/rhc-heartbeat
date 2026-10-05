@@ -7,30 +7,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m-horky/rhc-heartbeat/internal/chrony"
 	"github.com/m-horky/rhc-heartbeat/internal/clock"
-	"github.com/m-horky/rhc-heartbeat/internal/command"
 	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
 	"golang.org/x/sys/unix"
 )
 
-// TestCollectAssemblesHeartbeat verifies all source readings populate the public heartbeat.
+// TestCollectAssemblesHeartbeat verifies successful source readings populate the heartbeat.
 //
-// Given successful identity, boot ID, clock, and chrony sources, when collecting,
+// Given successful identity, boot ID, and clock sources, when collecting,
 // then all readings and the trigger are returned.
 func TestCollectAssemblesHeartbeat(t *testing.T) {
 	t.Parallel()
 
 	monotonic := unix.Timespec{Sec: 42, Nsec: 123}
+	boottime := unix.Timespec{Sec: 45, Nsec: 789}
 	realtime := unix.Timespec{Sec: 1_741_000_000, Nsec: 456}
-	runner := &testRunner{result: command.Result{Stdout: []byte(validChronyCSV())}}
-	source := testSources(runner)
+	source := testSources()
 	source.readIdentity = func() (consumer.Identity, error) {
 		return consumer.Identity{UUID: "system-uuid", OrgID: "org-id"}, nil
 	}
 	source.readBootID = func() (string, error) { return "boot-id", nil }
 	source.readClock = func() (clock.Reading, error) {
-		return clock.Reading{TimeMonotonic: monotonic, Time: realtime}, nil
+		return clock.Reading{TimeMonotonic: monotonic, TimeBoottime: boottime, Time: realtime}, nil
 	}
 
 	got, err := collect(context.Background(), TriggerOff, source)
@@ -55,105 +53,18 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 		t.Errorf("TimeMonotonic = %s, want %s", got.TimeMonotonic, wantMonotonic)
 	}
 
+	wantBoottime := time.Duration(boottime.Sec)*time.Second + time.Duration(boottime.Nsec)
+	if got.TimeBoottime != wantBoottime {
+		t.Errorf("TimeBoottime = %s, want %s", got.TimeBoottime, wantBoottime)
+	}
+
 	wantUnix := time.Unix(realtime.Sec, realtime.Nsec).UTC()
 	if !got.TimeUnix.Equal(wantUnix) {
 		t.Errorf("TimeUnix = %s, want %s", got.TimeUnix, wantUnix)
 	}
 
-	if got.TimeQuality != TimeQuality("sync:0.07") {
-		t.Errorf("TimeQuality = %q, want %q", got.TimeQuality, "sync:0.07")
-	}
-
 	if got.Trigger != TriggerOff {
 		t.Errorf("Trigger = %q, want %q", got.Trigger, TriggerOff)
-	}
-
-	if runner.name != "chronyc" || strings.Join(runner.args, " ") != "-c tracking" {
-		t.Errorf("command = %s %s, want chronyc -c tracking", runner.name, strings.Join(runner.args, " "))
-	}
-}
-
-// TestCollectContinuesWhenChronyIsUnavailable verifies missing chrony data does not block heartbeat collection.
-//
-// Given the chrony command fails, when collecting, then the heartbeat is returned with ChronyAvailable false.
-func TestCollectContinuesWhenChronyIsUnavailable(t *testing.T) {
-	t.Parallel()
-
-	source := testSources(&testRunner{err: errors.New("506 Cannot talk to daemon")})
-
-	got, err := collect(context.Background(), TriggerPing, source)
-	if err != nil {
-		t.Fatalf("collect() error = %v, want nil for unavailable chrony", err)
-	}
-
-	if got.TimeQuality != TimeQualityUnknown {
-		t.Errorf("TimeQuality = %q, want %q", got.TimeQuality, TimeQualityUnknown)
-	}
-}
-
-// TestCollectUsesUnknownWhenChronyOutputCannotBeParsed verifies chrony collection errors map to unknown quality.
-//
-// Given chrony returns malformed output, when collecting, then the heartbeat is returned with unknown quality.
-func TestCollectUsesUnknownWhenChronyOutputCannotBeParsed(t *testing.T) {
-	t.Parallel()
-
-	source := testSources(&testRunner{result: command.Result{Stdout: []byte("invalid output")}})
-
-	got, err := collect(context.Background(), TriggerPing, source)
-	if err != nil {
-		t.Fatalf("collect() error = %v, want nil when time quality is unknown", err)
-	}
-
-	if got.TimeQuality != TimeQualityUnknown {
-		t.Errorf("TimeQuality = %q, want %q", got.TimeQuality, TimeQualityUnknown)
-	}
-}
-
-// TestCollectPropagatesChronyContextCancellation verifies heartbeat collection respects cancellation.
-//
-// Given the chrony command context is canceled, when collecting, then the cancellation error is returned.
-func TestCollectPropagatesChronyContextCancellation(t *testing.T) {
-	t.Parallel()
-
-	source := testSources(&testRunner{err: context.Canceled})
-
-	_, err := collect(context.Background(), TriggerPing, source)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("collect() error = %v, want context.Canceled", err)
-	}
-}
-
-// TestTimeQualityFromTrackingMapsAvailableStates verifies chrony data maps to the quality values.
-//
-// Given unavailable, unsynchronized, or synchronized chrony data, when mapping quality,
-// then the expected value is returned.
-func TestTimeQualityFromTrackingMapsAvailableStates(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		tracking chrony.Tracking
-		want     TimeQuality
-	}{
-		{name: "unavailable", tracking: chrony.Tracking{}, want: TimeQualityUnknown},
-		{name: "unsynchronized", tracking: chrony.Tracking{Available: true}, want: TimeQualityDesync},
-		{
-			name: "synchronized",
-			tracking: chrony.Tracking{
-				Available: true, ClockSynchronized: true, ClockDistanceSeconds: 0.125,
-			},
-			want: TimeQuality("sync:0.125"),
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			if got := timeQualityFromTracking(test.tracking); got != test.want {
-				t.Errorf("timeQualityFromTracking() = %q, want %q", got, test.want)
-			}
-		})
 	}
 }
 
@@ -167,6 +78,21 @@ func TestCollectRejectsUnknownTrigger(t *testing.T) {
 	_, err := collect(context.Background(), Trigger("unknown"), sources{})
 	if err == nil || !strings.Contains(err.Error(), "invalid heartbeat trigger") {
 		t.Fatalf("collect() error = %v, want invalid trigger error", err)
+	}
+}
+
+// TestCollectPropagatesContextCancellation verifies canceled collection contexts are respected.
+//
+// Given an already canceled context, when collecting a heartbeat, then the cancellation is returned.
+func TestCollectPropagatesContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := collect(ctx, TriggerPing, testSources())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("collect() error = %v, want context.Canceled", err)
 	}
 }
 
@@ -209,7 +135,7 @@ func TestCollectWrapsSourceErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			source := testSources(&testRunner{result: command.Result{Stdout: []byte(validChronyCSV())}})
+			source := testSources()
 			test.configure(&source)
 
 			_, err := collect(context.Background(), TriggerPing, source)
@@ -224,8 +150,8 @@ func TestCollectWrapsSourceErrors(t *testing.T) {
 	}
 }
 
-// testSources returns successful heartbeat sources backed by the supplied command runner.
-func testSources(runner command.Runner) sources {
+// testSources returns successful heartbeat sources for collection tests.
+func testSources() sources {
 	return sources{
 		readIdentity: func() (consumer.Identity, error) {
 			return consumer.Identity{UUID: "test-uuid", OrgID: "test-org"}, nil
@@ -236,30 +162,9 @@ func testSources(runner command.Runner) sources {
 		readClock: func() (clock.Reading, error) {
 			return clock.Reading{
 				TimeMonotonic: unix.Timespec{Sec: 1, Nsec: 2},
+				TimeBoottime:  unix.Timespec{Sec: 1, Nsec: 4},
 				Time:          unix.Timespec{Sec: 1, Nsec: 3},
 			}, nil
 		},
-		runner: runner,
 	}
-}
-
-// validChronyCSV returns a valid chronyc -c tracking record for tests.
-func validChronyCSV() string {
-	return "ref-id,2,2025-03-01T12:00:00Z,0,0,0,0,0,0,0.06,0.04,64,Normal\n"
-}
-
-type testRunner struct {
-	name   string
-	args   []string
-	result command.Result
-	err    error
-}
-
-// Run records the command request and returns the configured test result.
-func (runner *testRunner) Run(_ context.Context, name string, args ...string) (command.Result, error) {
-	runner.name = name
-
-	runner.args = append([]string(nil), args...)
-
-	return runner.result, runner.err
 }

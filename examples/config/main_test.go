@@ -38,7 +38,7 @@ func TestConfigurationOutputRedactsProxyCredentials(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(encoded, "[REDACTED]") {
+	if !strings.Contains(encoded, "...") {
 		t.Errorf("configuration output = %q, want redaction markers", encoded)
 	}
 
