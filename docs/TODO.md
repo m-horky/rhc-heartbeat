@@ -19,8 +19,7 @@
   - [ ] Remove a cached batch only after confirmed successful delivery; retain it on failure or ambiguous results
   - [ ] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
 - [ ] Flexibility
-  - [ ] CLI input allows for free-form `--reason` string value, defaulting to `timer`
-  - [ ] `--reason` is `halt`, `sleep` or other appropriate identifiers (related to `systemd.special(7)`)
+  - [x] CLI input allows for an arbitrary `--kind` string value, defaulting to `ping`
 - [ ] Productize
   - [ ] Systemd service and timer executing every ten minutes (aligned with boot time)
   - [ ] Systemd service executing on system events (`systemd.special(7)`)

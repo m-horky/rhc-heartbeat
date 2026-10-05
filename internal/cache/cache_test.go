@@ -24,7 +24,7 @@ func TestCacheAppendAndReadAll(t *testing.T) {
 	cache := New(fs.Filesystem{}, path)
 	want := []heartbeat.Heartbeat{
 		{HostID: "first", TimeUnix: time.Date(2025, 1, 2, 3, 4, 5, 6, time.UTC)},
-		{HostID: "second", Trigger: heartbeat.TriggerPing},
+		{HostID: "second", Kind: heartbeat.KindPing},
 	}
 
 	for _, hb := range want {

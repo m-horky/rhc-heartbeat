@@ -15,7 +15,7 @@ import (
 // TestCollectAssemblesHeartbeat verifies successful source readings populate the heartbeat.
 //
 // Given successful identity, boot ID, and clock sources, when collecting,
-// then all readings and the trigger are returned.
+// then all readings and the heartbeat kind are returned.
 func TestCollectAssemblesHeartbeat(t *testing.T) {
 	t.Parallel()
 
@@ -31,7 +31,7 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 		return clock.Reading{TimeMonotonic: monotonic, TimeBoottime: boottime, Time: realtime}, nil
 	}
 
-	got, err := collect(context.Background(), TriggerOff, source)
+	got, err := collect(context.Background(), KindOff, source)
 	if err != nil {
 		t.Fatalf("collect() error = %v", err)
 	}
@@ -63,21 +63,28 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 		t.Errorf("TimeUnix = %s, want %s", got.TimeUnix, wantUnix)
 	}
 
-	if got.Trigger != TriggerOff {
-		t.Errorf("Trigger = %q, want %q", got.Trigger, TriggerOff)
+	if got.Kind != KindOff {
+		t.Errorf("Kind = %q, want %q", got.Kind, KindOff)
 	}
 }
 
-// TestCollectRejectsUnknownTrigger verifies invalid trigger values are rejected before reading sources.
+// TestCollectAcceptsArbitraryKind verifies collection preserves nonstandard heartbeat kind strings.
 //
-// Given an unsupported trigger and no configured sources, when collecting,
-// then validation fails without reading any source.
-func TestCollectRejectsUnknownTrigger(t *testing.T) {
+// Given successful heartbeat sources and an arbitrary kind
+// When a heartbeat is collected
+// Then collection succeeds and preserves that kind in the heartbeat.
+func TestCollectAcceptsArbitraryKind(t *testing.T) {
 	t.Parallel()
 
-	_, err := collect(context.Background(), Trigger("unknown"), sources{})
-	if err == nil || !strings.Contains(err.Error(), "invalid heartbeat trigger") {
-		t.Fatalf("collect() error = %v, want invalid trigger error", err)
+	const wantKind = Kind("systemd:custom event / 123")
+
+	got, err := collect(context.Background(), wantKind, testSources())
+	if err != nil {
+		t.Fatalf("collect() error = %v", err)
+	}
+
+	if got.Kind != wantKind {
+		t.Fatalf("Kind = %q, want %q", got.Kind, wantKind)
 	}
 }
 
@@ -90,7 +97,7 @@ func TestCollectPropagatesContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := collect(ctx, TriggerPing, testSources())
+	_, err := collect(ctx, KindPing, testSources())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("collect() error = %v, want context.Canceled", err)
 	}
@@ -138,7 +145,7 @@ func TestCollectWrapsSourceErrors(t *testing.T) {
 			source := testSources()
 			test.configure(&source)
 
-			_, err := collect(context.Background(), TriggerPing, source)
+			_, err := collect(context.Background(), KindPing, source)
 			if !errors.Is(err, wantErr) {
 				t.Fatalf("collect() error = %v, want wrapped %v", err, wantErr)
 			}

@@ -23,7 +23,7 @@ func main() {
 
 // run collects a periodic heartbeat and writes it as indented JSON.
 func run() error {
-	hb, err := heartbeat.Get(context.Background(), heartbeat.TriggerPing)
+	hb, err := heartbeat.Get(context.Background(), heartbeat.KindPing)
 	if err != nil {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}
