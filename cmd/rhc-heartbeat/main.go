@@ -6,18 +6,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/m-horky/rhc-heartbeat/internal/constants"
+	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
-	"github.com/m-horky/rhc-heartbeat/pkg/process"
 )
 
 // main runs the command and exits unsuccessfully when heartbeat processing fails.
@@ -32,17 +30,18 @@ func main() {
 
 // execute runs the command with a context canceled by an interrupt or termination signal.
 func execute(args []string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	return run(ctx, args)
 }
 
-// run collects one heartbeat, loads configuration, and processes it with the pending cache.
+// run collects one heartbeat, configures delivery, uploads it with pending records, and caches failures.
 func run(ctx context.Context, args []string) error {
+	// Parse input first.
 	kind, err := parseKind(args)
 	if errors.Is(err, flag.ErrHelp) {
-		writeUsage(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout, "usage: rhc-heartbeat [--kind on|off|ping]")
 
 		return nil
 	}
@@ -51,68 +50,64 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	pending := cache.New(constants.PathFromEnv(constants.PendingCachePathEnv, constants.DefaultPendingCachePath))
-
-	hb, err := heartbeat.Get(ctx, kind)
-	if err != nil {
-		return fmt.Errorf("collect heartbeat: %w", err)
-	}
-
+	// Initialize configuration.
 	cfg, err := config.Get()
 	if err != nil {
-		return cacheAfterSetupFailure(pending, hb, fmt.Errorf("load heartbeat configuration: %w", err))
+		return fmt.Errorf("cannot load configuration: %w", err)
 	}
 
-	processor, err := process.New(cfg, pending)
+	// Initialize Prometheus client.
+	uploader, err := remotewrite.New(cfg)
 	if err != nil {
-		return cacheAfterSetupFailure(pending, hb, fmt.Errorf("create heartbeat processor: %w", err))
+		return fmt.Errorf("cannot create Prometheus Remote Write client: %w", err)
 	}
-	defer processor.CloseIdleConnections()
+	defer uploader.CloseIdleConnections()
 
-	if err := processor.Process(ctx, hb); err != nil {
-		return fmt.Errorf("process heartbeat: %w", err)
+	// Load past heartbeats.
+	hbCache, err := cache.Load(constants.PathFromEnv(constants.PendingCachePathEnv, constants.DefaultPendingCachePath))
+	if err != nil {
+		return fmt.Errorf("cannot load cache: %w", err)
 	}
 
-	slog.Info("heartbeat processing completed", "kind", kind, "endpoint", cfg.Heartbeat.URI)
+	// Collect current heartbeat.
+	hb, err := heartbeat.Get(ctx, kind)
+	if err != nil {
+		return fmt.Errorf("cannot collect heartbeat: %w", err)
+	}
+
+	hbCache.Add(hb)
+
+	// Attempt the upload.
+	if err := uploader.Upload(ctx, hbCache.Read()); err != nil {
+		return handleUploadFailure(hbCache, err)
+	}
+
+	return handleUploadSuccess(hbCache)
+}
+
+// handleUploadSuccess clears the heartbeat cache after a successful upload.
+func handleUploadSuccess(hbCache *cache.Cache) error {
+	slog.Info("upload complete")
+	hbCache.Clear()
+
+	if err := hbCache.Save(); err != nil {
+		return fmt.Errorf("cannot clear heartbeat cache: %w", err)
+	}
+
+	slog.Debug("heartbeat cache cleared")
 
 	return nil
 }
 
-// parseKind parses and validates the heartbeat kind supplied on the command line.
-func parseKind(args []string) (heartbeat.Kind, error) {
-	flags := flag.NewFlagSet("rhc-heartbeat", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	kindValue := flags.String("kind", string(heartbeat.KindPing), "kind of heartbeat to collect")
+// handleUploadFailure saves pending heartbeats and returns the upload error.
+func handleUploadFailure(hbCache *cache.Cache, uploadErr error) error {
+	slog.Error("heartbeat upload failed", "err", uploadErr)
 
-	if err := flags.Parse(args); err != nil {
-		return "", fmt.Errorf("parse command flags: %w", err)
+	if err := hbCache.Save(); err == nil {
+		slog.Info("heartbeat cache saved")
+	} else {
+		slog.Warn("cannot save heartbeat cache", "err", err)
 	}
 
-	if flags.NArg() > 0 {
-		return "", fmt.Errorf("unexpected positional arguments: %s", strings.Join(flags.Args(), " "))
-	}
-
-	kind := heartbeat.Kind(*kindValue)
-	if !kind.Valid() {
-		return "", fmt.Errorf("invalid --kind %q: must be one of %q, %q, or %q", kind,
-			heartbeat.KindOn, heartbeat.KindOff, heartbeat.KindPing)
-	}
-
-	return kind, nil
-}
-
-// cacheAfterSetupFailure retains a collected heartbeat when configuration or processor setup fails.
-func cacheAfterSetupFailure(pending *cache.Cache, hb heartbeat.Heartbeat, setupErr error) error {
-	slog.Warn("heartbeat setup failed; caching for retry", "err", setupErr)
-
-	if err := pending.Append(hb); err != nil {
-		return errors.Join(setupErr, fmt.Errorf("cache heartbeat after setup failure: %w", err))
-	}
-
-	return nil
-}
-
-// writeUsage writes the supported command syntax to the supplied writer.
-func writeUsage(writer io.Writer) {
-	_, _ = fmt.Fprintln(writer, "usage: rhc-heartbeat [--kind on|off|ping]")
+	return fmt.Errorf("cannot upload heartbeat: %w", uploadErr)
 }
