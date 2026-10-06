@@ -24,5 +24,5 @@
   - [ ] Man page for the binary
   - [ ] SELinux policy code
   - [ ] SELinux policy subpackage
-  - [ ] Process locking: Create a PID-level lock that sleeps until the lock lifts
+  - [x] Process locking: Create a global process lock that sleeps until the lock lifts
   - [ ] Correctly derive Observatorium URL from the Candlepin URL

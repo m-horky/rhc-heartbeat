@@ -19,6 +19,9 @@ const (
 	// DefaultPendingCachePath is the default persistent cache file for undelivered heartbeats.
 	DefaultPendingCachePath = "/var/lib/rhc/heartbeat.jsonl"
 
+	// DefaultProcessLockPath is the global runtime lock file for rhc-heartbeat.
+	DefaultProcessLockPath = "/run/lock/rhc-heartbeat.lock"
+
 	// ClientCertificatePathEnv selects the client certificate used for Remote Write mutual TLS.
 	ClientCertificatePathEnv = "RHC_HEARTBEAT_CLIENT_CERT_PATH"
 	// DefaultClientCertificatePath is the default client certificate used for Remote Write mutual TLS.
