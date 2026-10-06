@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -25,8 +24,8 @@ type Lock struct {
 }
 
 // Acquire obtains an exclusive lock on path, waiting until it is available or ctx is canceled.
-// It logs once if another process holds the lock, using PID -1 when its PID is unavailable.
-func Acquire(ctx context.Context, path string) (*Lock, error) {
+// It calls onWait once if another process holds the lock, using PID -1 when its PID is unavailable.
+func Acquire(ctx context.Context, path string, onWait func(pid int)) (*Lock, error) {
 	file, err := openLockFile(path)
 	if err != nil {
 		return nil, err
@@ -68,7 +67,9 @@ func Acquire(ctx context.Context, path string) (*Lock, error) {
 		}
 
 		if !reportedWait {
-			slog.Info("waiting for another process to finish", "pid", readOwnerPID(file))
+			if onWait != nil {
+				onWait(readOwnerPID(file))
+			}
 
 			reportedWait = true
 		}

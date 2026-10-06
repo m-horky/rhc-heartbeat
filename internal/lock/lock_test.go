@@ -18,7 +18,7 @@ func TestAcquireWaitsUntilLockReleased(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "heartbeat.lock")
 
-	owner, err := Acquire(context.Background(), path)
+	owner, err := Acquire(context.Background(), path, nil)
 	if err != nil {
 		t.Fatalf("Acquire() owner error = %v", err)
 	}
@@ -28,7 +28,7 @@ func TestAcquireWaitsUntilLockReleased(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		lock, err := Acquire(context.Background(), path)
+		lock, err := Acquire(context.Background(), path, nil)
 		result <- struct {
 			lock *Lock
 			err  error
@@ -66,16 +66,15 @@ func TestAcquireWaitsUntilLockReleased(t *testing.T) {
 	}
 }
 
-// TestAcquireWaitHonorsContext verifies a waiting acquisition stops when its context expires.
+// TestAcquireCallsOnWait verifies the callback receives the current owner PID once on contention.
 //
-// Given another process holds the lock, when a waiting request reaches its context deadline,
-// then acquisition returns an error wrapping the deadline error.
-func TestAcquireWaitHonorsContext(t *testing.T) {
+// Given another process holds the lock, when a request waits for it, then the callback receives its PID.
+func TestAcquireCallsOnWait(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "heartbeat.lock")
 
-	owner, err := Acquire(context.Background(), path)
+	owner, err := Acquire(context.Background(), path, nil)
 	if err != nil {
 		t.Fatalf("Acquire() owner error = %v", err)
 	}
@@ -89,7 +88,48 @@ func TestAcquireWaitHonorsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	_, err = Acquire(ctx, path)
+	called := false
+
+	_, err = Acquire(ctx, path, func(pid int) {
+		called = true
+
+		if pid <= 0 {
+			t.Errorf("onWait PID = %d, want positive PID", pid)
+		}
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Acquire() error = %v, want context deadline exceeded", err)
+	}
+
+	if !called {
+		t.Fatal("Acquire() did not call onWait while lock was held")
+	}
+}
+
+// TestAcquireWaitHonorsContext verifies a waiting acquisition stops when its context expires.
+//
+// Given another process holds the lock, when a waiting request reaches its context deadline,
+// then acquisition returns an error wrapping the deadline error.
+func TestAcquireWaitHonorsContext(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "heartbeat.lock")
+
+	owner, err := Acquire(context.Background(), path, nil)
+	if err != nil {
+		t.Fatalf("Acquire() owner error = %v", err)
+	}
+
+	defer func() {
+		if err := owner.Close(); err != nil {
+			t.Errorf("owner.Close() error = %v", err)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err = Acquire(ctx, path, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Acquire() error = %v, want context deadline exceeded", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
 // TestGetUsesConfiguredRHSMPath verifies the RHSM path environment override.

@@ -1,4 +1,3 @@
-// Package consumer exposes consumer identity loaded from the system certificate.
 package consumer
 
 import (
@@ -6,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	internalconsumer "github.com/m-horky/rhc-heartbeat/internal/consumer"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
 // Identity contains the UUID and organization ID from a consumer certificate.

@@ -6,8 +6,8 @@ import (
 	"os"
 
 	internalconfig "github.com/m-horky/rhc-heartbeat/internal/config"
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
 // Config is the resolved heartbeat configuration.

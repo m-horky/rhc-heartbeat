@@ -69,6 +69,13 @@ linters:
           allow:
             - $gostd
             - github.com/m-horky/elk/internal/
+        cmd_must_not_import_internal:
+          list-mode: lax
+          files:
+            - "cmd/**"
+          deny:
+            - pkg: github.com/m-horky/rhc-heartbeat/internal/
+              desc: command packages must use the public pkg API
   exclusions:
     rules:
       # Linux syscall and interface details are intentional in the filesystem adapter.
