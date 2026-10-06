@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/m-horky/rhc-heartbeat/internal/constants"
+	"github.com/m-horky/rhc-heartbeat/internal/lock"
 	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
@@ -50,6 +51,17 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// Ensure only one process instance runs at a time.
+	flock, err := lock.Acquire(ctx, constants.DefaultProcessLockPath)
+	if err != nil {
+		return fmt.Errorf("cannot acquire application lock: %w", err)
+	}
+	defer func() {
+		if err := flock.Close(); err != nil {
+			slog.Debug("cannot release application lock", "err", err)
+		}
+	}()
+
 	// Initialize configuration.
 	cfg, err := config.Get()
 	if err != nil {
@@ -78,11 +90,11 @@ func run(ctx context.Context, args []string) error {
 	hbCache.Add(hb)
 
 	// Attempt the upload.
-	if err := uploader.Upload(ctx, hbCache.Read()); err != nil {
+	if err := uploader.Upload(ctx, hbCache.Read()); err == nil {
+		return handleUploadSuccess(hbCache)
+	} else {
 		return handleUploadFailure(hbCache, err)
 	}
-
-	return handleUploadSuccess(hbCache)
 }
 
 // handleUploadSuccess clears the heartbeat cache after a successful upload.
