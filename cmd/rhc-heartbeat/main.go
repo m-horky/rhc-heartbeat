@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
@@ -68,6 +69,8 @@ func run(ctx context.Context, args []string) error {
 		return fmt.Errorf("cannot load configuration: %w", err)
 	}
 
+	logInsecureTransport(cfg)
+
 	// Initialize Prometheus client.
 	uploader, err := upload.New(cfg)
 	if err != nil {
@@ -94,6 +97,17 @@ func run(ctx context.Context, args []string) error {
 		return handleUploadSuccess(hbCache)
 	} else {
 		return handleUploadFailure(hbCache, err)
+	}
+}
+
+// logInsecureTransport warns when Remote Write traffic is not protected by HTTPS verification.
+func logInsecureTransport(cfg config.Config) {
+	if strings.HasPrefix(cfg.Heartbeat.URI, "http://") {
+		slog.Warn("Remote Write endpoint uses plain HTTP; heartbeat data is not encrypted")
+	}
+
+	if strings.HasPrefix(cfg.Heartbeat.URI, "https://") && !cfg.Heartbeat.TLSVerify {
+		slog.Warn("Remote Write TLS certificate verification is disabled")
 	}
 }
 
