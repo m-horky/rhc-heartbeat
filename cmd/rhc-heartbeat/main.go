@@ -11,12 +11,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
-	"github.com/m-horky/rhc-heartbeat/internal/lock"
-	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
+	"github.com/m-horky/rhc-heartbeat/pkg/lock"
+	"github.com/m-horky/rhc-heartbeat/pkg/upload"
 )
 
 // main runs the command and exits unsuccessfully when heartbeat processing fails.
@@ -52,7 +52,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	// Ensure only one process instance runs at a time.
-	flock, err := lock.Acquire(ctx, constants.DefaultProcessLockPath)
+	flock, err := lock.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("cannot acquire application lock: %w", err)
 	}
@@ -69,7 +69,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	// Initialize Prometheus client.
-	uploader, err := remotewrite.New(cfg)
+	uploader, err := upload.New(cfg)
 	if err != nil {
 		return fmt.Errorf("cannot create Prometheus Remote Write client: %w", err)
 	}

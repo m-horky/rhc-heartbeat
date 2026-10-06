@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
 // TestGetUsesConfiguredCertificatePath verifies the certificate path environment override.

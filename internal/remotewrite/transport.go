@@ -14,11 +14,9 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
-	"github.com/m-horky/rhc-heartbeat/internal/constants"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
-	"github.com/m-horky/rhc-heartbeat/pkg/version"
 )
 
 const (
@@ -26,25 +24,36 @@ const (
 	connectTimeout = 5 * time.Second
 )
 
-// Client sends heartbeat batches to a Prometheus Remote Write v1 endpoint.
-type Client struct {
-	endpoint string
-	http     *http.Client
+// Options contains application-specific values used to configure the Remote Write client.
+type Options struct {
+	// ClientCertificatePath is the path to the mutual TLS client certificate.
+	ClientCertificatePath string
+	// ClientKeyPath is the path to the mutual TLS client key.
+	ClientKeyPath string
+	// UserAgent is sent with each Remote Write request.
+	UserAgent string
 }
 
-// New constructs a Remote Write client using the resolved heartbeat configuration.
-func New(cfg config.Config) (*Client, error) {
+// Client sends heartbeat batches to a Prometheus Remote Write v1 endpoint.
+type Client struct {
+	endpoint  string
+	http      *http.Client
+	userAgent string
+}
+
+// New constructs a Remote Write client using resolved heartbeat configuration and supplied options.
+func New(cfg config.Config, options Options) (*Client, error) {
 	endpoint, err := validateEndpoint(cfg.Heartbeat.URI)
 	if err != nil {
 		return nil, err
 	}
 
-	httpClient, err := newHTTPClient(cfg, endpoint)
+	httpClient, err := newHTTPClient(cfg, endpoint, options)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{endpoint: endpoint, http: httpClient}, nil
+	return &Client{endpoint: endpoint, http: httpClient, userAgent: options.UserAgent}, nil
 }
 
 // Upload encodes and sends the supplied heartbeats as one Snappy-compressed Remote Write request.
@@ -71,7 +80,7 @@ func (client *Client) Upload(ctx context.Context, heartbeats []heartbeat.Heartbe
 
 	request.Header.Set("Content-Encoding", "snappy")
 	request.Header.Set("Content-Type", "application/x-protobuf")
-	request.Header.Set("User-Agent", "rhc-heartbeat/"+version.Version)
+	request.Header.Set("User-Agent", client.userAgent)
 	request.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 	response, err := client.http.Do(request)
@@ -106,7 +115,7 @@ func validateEndpoint(endpoint string) (string, error) {
 }
 
 // newHTTPClient creates an HTTP client configured with endpoint TLS and proxy settings.
-func newHTTPClient(cfg config.Config, endpoint string) (*http.Client, error) {
+func newHTTPClient(cfg config.Config, endpoint string, options Options) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
@@ -118,7 +127,7 @@ func newHTTPClient(cfg config.Config, endpoint string) (*http.Client, error) {
 	}
 
 	if parsedEndpoint.Scheme == "https" {
-		tlsConfig, err := newTLSConfig(cfg)
+		tlsConfig, err := newTLSConfig(cfg, options)
 		if err != nil {
 			return nil, err
 		}
@@ -170,11 +179,8 @@ func effectivePort(value *url.URL) string {
 }
 
 // newTLSConfig creates the endpoint TLS configuration, including configured certificate verification.
-func newTLSConfig(cfg config.Config) (*tls.Config, error) {
-	certificate, err := tls.LoadX509KeyPair(
-		constants.PathFromEnv(constants.ClientCertificatePathEnv, constants.DefaultClientCertificatePath),
-		constants.PathFromEnv(constants.ClientKeyPathEnv, constants.DefaultClientKeyPath),
-	)
+func newTLSConfig(cfg config.Config, options Options) (*tls.Config, error) {
+	certificate, err := tls.LoadX509KeyPair(options.ClientCertificatePath, options.ClientKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load Remote Write client certificate: %w", err)
 	}

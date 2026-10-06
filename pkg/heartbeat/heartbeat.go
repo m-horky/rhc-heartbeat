@@ -1,4 +1,3 @@
-// Package heartbeat collects the system state represented by a heartbeat.
 package heartbeat
 
 import (

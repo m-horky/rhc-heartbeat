@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
+	"github.com/m-horky/rhc-heartbeat/pkg/upload"
 )
 
 // main runs the Remote Write example and reports failures.
@@ -35,7 +35,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}
 
-	client, err := remotewrite.New(cfg)
+	client, err := upload.New(cfg)
 	if err != nil {
 		return fmt.Errorf("create Prometheus Remote Write client: %w", err)
 	}

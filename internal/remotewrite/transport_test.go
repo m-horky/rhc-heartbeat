@@ -11,7 +11,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
-	"github.com/m-horky/rhc-heartbeat/pkg/version"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
@@ -23,7 +22,7 @@ func TestNewRejectsInvalidEndpoint(t *testing.T) {
 	t.Parallel()
 
 	for _, endpoint := range []string{"", "://broken", "ftp://prometheus.example.com/write"} {
-		if _, err := New(config.Config{Heartbeat: config.Endpoint{URI: endpoint}}); err == nil {
+		if _, err := New(config.Config{Heartbeat: config.Endpoint{URI: endpoint}}, Options{}); err == nil {
 			t.Errorf("New(%q) error = nil, want invalid endpoint error", endpoint)
 		}
 	}
@@ -34,8 +33,6 @@ func TestNewRejectsInvalidEndpoint(t *testing.T) {
 // Given a valid heartbeat and endpoint, when Upload sends the batch, then it sends block-compressed
 // protobuf with the required protocol headers.
 func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
-	t.Parallel()
-
 	requests := make(chan http.Header, 1)
 	schema := newRemoteWriteMessages()
 
@@ -65,7 +62,10 @@ func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(config.Config{Heartbeat: config.Endpoint{URI: server.URL}})
+	client, err := New(
+		config.Config{Heartbeat: config.Endpoint{URI: server.URL}},
+		Options{UserAgent: "rhc-heartbeat/test"},
+	)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -89,8 +89,8 @@ func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
 		t.Errorf("Remote Write version = %q, want 0.1.0", got)
 	}
 
-	if got := headers.Get("User-Agent"); !strings.Contains(got, "rhc-heartbeat/"+version.Version) {
-		t.Errorf("User-Agent = %q, want rhc-heartbeat version", got)
+	if got := headers.Get("User-Agent"); got != "rhc-heartbeat/test" {
+		t.Errorf("User-Agent = %q, want rhc-heartbeat/test", got)
 	}
 }
 
@@ -107,7 +107,10 @@ func TestUploadReturnsErrorForNonSuccessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(config.Config{Heartbeat: config.Endpoint{URI: server.URL}})
+	client, err := New(
+		config.Config{Heartbeat: config.Endpoint{URI: server.URL}},
+		Options{UserAgent: "rhc-heartbeat/test"},
+	)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

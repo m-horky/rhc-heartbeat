@@ -1,4 +1,3 @@
-// Package constants defines the system paths and environment variables used by rhc-heartbeat.
 package constants
 
 import "os"
