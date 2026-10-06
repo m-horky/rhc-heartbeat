@@ -10,10 +10,10 @@
   - [x] Read monotonic uptime and wall-clock time
   - [x] Read CLOCK_BOOTTIME
   - [x] Construct the Heartbeat object
-- [ ] Cache heartbeats locally
+- [x] Cache heartbeats locally
   - [x] Store typed heartbeat objects as one JSON value per line in `/var/lib/rhc/heartbeat.jsonl`
-  - [ ] Keep a single heartbeat event per boot
-  - [ ] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
+  - [x] Keep a single heartbeat event per boot
+  - [x] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
 - [x] Protocol
   - [x] Use ProtoBuf (google.golang.org/protobuf)
   - [x] Use Prometheus Remote Write

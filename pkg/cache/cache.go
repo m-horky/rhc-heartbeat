@@ -2,61 +2,67 @@ package cache
 
 import (
 	"fmt"
-	"sync"
 
-	"github.com/m-horky/rhc-heartbeat/internal/cache"
+	internalcache "github.com/m-horky/rhc-heartbeat/internal/cache"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// Cache stores pending heartbeats at an application-supplied path.
+// Cache stores the newest pending heartbeat for each boot ID in memory.
+// Callers must serialize access to its methods.
 type Cache struct {
-	implementation *cache.Cache
-	mu             sync.Mutex
+	implementation *internalcache.Cache
+	heartbeats     []heartbeat.Heartbeat
 }
 
-// New constructs a filesystem-backed cache at path. The parent directory must
-// already exist and is never created by the cache.
-func New(path string) *Cache {
-	return &Cache{implementation: cache.New(fs.Filesystem{}, path)}
-}
+// Load reads pending heartbeats from path. A missing file produces an empty cache.
+func Load(path string) (*Cache, error) {
+	implementation := internalcache.New(fs.Filesystem{}, path)
 
-// WithExclusive runs operation while excluding other WithExclusive operations on this cache.
-// It supports multi-step workflows that must not interleave, such as upload and backfill.
-func (cache *Cache) WithExclusive(operation func() error) error {
-	if operation == nil {
-		return fmt.Errorf("run cache operation: missing operation")
-	}
-
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	return operation()
-}
-
-// ReadAll returns cached heartbeats in file order. A missing cache is empty.
-func (cache *Cache) ReadAll() ([]heartbeat.Heartbeat, error) {
-	heartbeats, err := cache.implementation.ReadAll()
+	heartbeats, err := implementation.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("read pending heartbeats: %w", err)
+		return nil, fmt.Errorf("load pending heartbeats: %w", err)
 	}
 
-	return heartbeats, nil
-}
-
-// Append adds one heartbeat to the JSONL cache.
-func (cache *Cache) Append(hb heartbeat.Heartbeat) error {
-	if err := cache.implementation.Append(hb); err != nil {
-		return fmt.Errorf("append pending heartbeat: %w", err)
+	loaded := &Cache{implementation: implementation}
+	for _, hb := range heartbeats {
+		loaded.Add(hb)
 	}
 
-	return nil
+	return loaded, nil
 }
 
-// Rewrite atomically replaces the cache with the supplied heartbeats.
-func (cache *Cache) Rewrite(heartbeats []heartbeat.Heartbeat) error {
-	if err := cache.implementation.Rewrite(heartbeats); err != nil {
-		return fmt.Errorf("rewrite pending heartbeats: %w", err)
+// Read returns a copy of all cached heartbeats.
+func (cache *Cache) Read() []heartbeat.Heartbeat {
+	return append([]heartbeat.Heartbeat{}, cache.heartbeats...)
+}
+
+// Add adds a heartbeat or replaces its boot ID's value when its monotonic time is newer.
+func (cache *Cache) Add(hb heartbeat.Heartbeat) {
+	for index, current := range cache.heartbeats {
+		if current.BootID == hb.BootID {
+			if hb.TimeMonotonic > current.TimeMonotonic {
+				cache.heartbeats[index] = hb
+			}
+
+			return
+		}
+	}
+
+	cache.heartbeats = append(cache.heartbeats, hb)
+}
+
+// Clear removes all cached heartbeats from memory. Call Save to persist the empty cache.
+func (cache *Cache) Clear() {
+	cache.heartbeats = nil
+}
+
+// Save persists the current in-memory heartbeats to disk. Add and Clear changes
+// are not persisted until Save is called; on failure, the in-memory cache remains
+// changed and the on-disk state may or may not have been updated.
+func (cache *Cache) Save() error {
+	if err := cache.implementation.Rewrite(cache.heartbeats); err != nil {
+		return fmt.Errorf("save pending heartbeats: %w", err)
 	}
 
 	return nil
