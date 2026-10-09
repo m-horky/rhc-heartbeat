@@ -1,213 +1,122 @@
-// Package config loads heartbeat settings and compatible values from rhsm.conf.
 package config
 
 import (
 	"errors"
 	"fmt"
-	iofs "io/fs"
 	"net/url"
-	"strings"
-
-	"github.com/BurntSushi/toml"
-	"github.com/m-horky/rhc-heartbeat/internal/fs"
+	"time"
 )
 
-// Config is the resolved heartbeat configuration.
+// Config contains resolved native configuration.
 type Config struct {
-	Heartbeat Endpoint   `toml:"heartbeat"`
-	HTTP      HTTPConfig `toml:"http"`
+	HTTP HTTP
+	API  API
 }
 
-// HTTPConfig contains transport settings.
-type HTTPConfig struct {
-	Proxy Proxy `toml:"proxy"`
+// HTTP contains resolved outgoing HTTP settings.
+type HTTP struct {
+	Timeout Timeout
+	Proxy   Proxy
 }
 
-// Endpoint is the configured heartbeat upload endpoint and its TLS settings.
-type Endpoint struct {
-	URI       string `toml:"uri"`
-	TLSVerify bool   `toml:"tls-verify"`
-	CAPath    string `toml:"ca-path"`
+// Timeout contains resolved transport timeouts.
+type Timeout struct {
+	Connect time.Duration
+	Request time.Duration
+	Idle    time.Duration
 }
 
-// Proxy contains HTTP proxy settings shared by outgoing requests.
+// Proxy contains a proxy URL, credentials, and bypass rules. NoProxy rules match
+// hostnames and their subdomains on DNS label boundaries, IP literals, CIDRs,
+// optional ports, and the whole-entry wildcard; a leading *. aliases its hostname.
 type Proxy struct {
-	URI      string `toml:"uri"`
-	User     string `toml:"user"`
-	Password string `toml:"password"`
+	URI      url.URL
+	Username string
+	Password string
+	NoProxy  []string
 }
 
-type partialConfig struct {
-	API  *partialAPI  `toml:"api"`
-	HTTP *partialHTTP `toml:"http"`
+// API contains resolved API endpoints.
+type API struct {
+	Heartbeat Endpoint
 }
 
-type partialAPI struct {
-	Heartbeat *partialEndpoint `toml:"heartbeat"`
+// Endpoint contains a resolved endpoint URL and TLS settings.
+type Endpoint struct {
+	URI       url.URL
+	TLSVerify bool
+	CAPath    string
 }
 
-type partialHTTP struct {
-	Proxy *partialProxy `toml:"proxy"`
-}
+// resolve converts merged native settings into complete resolved sections.
+func (partial dtoConfig) resolve() (Config, error) {
+	if partial.HTTP.Timeout.Connect == nil || partial.HTTP.Timeout.Request == nil || partial.HTTP.Timeout.Idle == nil ||
+		partial.HTTP.Proxy.URI == nil || partial.HTTP.Proxy.Username == nil || partial.HTTP.Proxy.Password == nil ||
+		partial.HTTP.Proxy.NoProxy == nil || partial.API.Heartbeat.URI == nil ||
+		partial.API.Heartbeat.TLSVerify == nil || partial.API.Heartbeat.CAPath == nil {
+		return Config{}, errors.New("native configuration is incomplete")
+	}
 
-type partialEndpoint struct {
-	URI       *string `toml:"uri"`
-	TLSVerify *bool   `toml:"tls-verify"`
-	CAPath    *string `toml:"ca-path"`
-}
-
-type partialProxy struct {
-	URI      *string `toml:"uri"`
-	User     *string `toml:"user"`
-	Password *string `toml:"password"`
-}
-
-// LoadFromPaths resolves the application TOML file over rhsm.conf-derived defaults
-// using filesystem for file access. Missing files are allowed; errors reading or
-// parsing present files are returned.
-func LoadFromPaths(filesystem fs.FS, configPath, rhsmPath string) (Config, error) {
-	cfg := Config{Heartbeat: Endpoint{TLSVerify: true}}
-
-	legacy, err := loadRHSM(filesystem, rhsmPath)
+	endpoint, err := resolveEndpoint(partial.API.Heartbeat)
 	if err != nil {
 		return Config{}, err
 	}
 
-	cfg = cfg.applyRHSM(legacy)
-
-	data, err := filesystem.Read(configPath)
+	proxy, err := resolveProxy(partial.HTTP.Proxy)
 	if err != nil {
-		if errors.Is(err, iofs.ErrNotExist) {
-			return cfg, nil
-		}
-
-		return Config{}, fmt.Errorf("read configuration %s: %w", configPath, err)
+		return Config{}, err
 	}
 
-	var override partialConfig
-	if _, err := toml.Decode(string(data), &override); err != nil {
-		return Config{}, fmt.Errorf("decode configuration %s: invalid TOML syntax", configPath)
-	}
-
-	if err := cfg.apply(override); err != nil {
-		return Config{}, fmt.Errorf("validate configuration %s: %w", configPath, err)
-	}
-
-	return cfg, nil
+	return Config{
+		HTTP: HTTP{
+			Timeout: Timeout{
+				Connect: time.Duration(*partial.HTTP.Timeout.Connect) * time.Second,
+				Request: time.Duration(*partial.HTTP.Timeout.Request) * time.Second,
+				Idle:    time.Duration(*partial.HTTP.Timeout.Idle) * time.Second,
+			},
+			Proxy: proxy,
+		},
+		API: API{Heartbeat: endpoint},
+	}, nil
 }
 
-// applyRHSM applies non-empty legacy settings as configuration fallbacks.
-func (cfg Config) applyRHSM(legacy rhsmSettings) Config {
-	if legacy.CandlepinURI != "" {
-		cfg.Heartbeat.URI = legacy.RemoteWriteURI
+// resolveEndpoint parses the configured endpoint and resolves its TLS settings.
+func resolveEndpoint(partial dtoEndpoint) (Endpoint, error) {
+	if partial.URI == nil || *partial.URI == "" || partial.TLSVerify == nil || partial.CAPath == nil {
+		return Endpoint{}, errors.New("resolve api.heartbeat: required setting is empty or missing")
 	}
 
-	if legacy.InsecurePresent {
-		cfg.Heartbeat.TLSVerify = !legacy.Insecure
+	parsed, err := parseHTTPURL(*partial.URI)
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("resolve api.heartbeat.uri: %w", err)
 	}
 
-	if legacy.CAPath != "" {
-		cfg.Heartbeat.CAPath = legacy.CAPath
-	}
-
-	if legacy.Proxy.URI != "" || legacy.Proxy.User != "" || legacy.Proxy.Password != "" {
-		cfg.HTTP.Proxy = legacy.Proxy
-	}
-
-	return cfg
+	return Endpoint{URI: *parsed, TLSVerify: *partial.TLSVerify, CAPath: *partial.CAPath}, nil
 }
 
-// apply applies explicitly supplied TOML values over resolved fallback settings.
-func (cfg *Config) apply(p partialConfig) error {
-	if p.API != nil && p.API.Heartbeat != nil {
-		if err := cfg.applyEndpoint(*p.API.Heartbeat); err != nil {
-			return err
-		}
+// resolveProxy parses the configured proxy URI and resolves optional credentials and bypass rules.
+func resolveProxy(partial dtoProxy) (Proxy, error) {
+	if partial.URI == nil || partial.Username == nil || partial.Password == nil || partial.NoProxy == nil {
+		return Proxy{}, errors.New("resolve http.proxy: required setting is missing")
 	}
 
-	if p.HTTP != nil && p.HTTP.Proxy != nil {
-		if err := cfg.applyProxy(*p.HTTP.Proxy); err != nil {
-			return err
-		}
-	}
+	var uri url.URL
 
-	return nil
-}
-
-// applyEndpoint validates and applies the api.heartbeat Remote Write endpoint override.
-func (cfg *Config) applyEndpoint(p partialEndpoint) error {
-	if p.URI != nil {
-		uri, err := applyURI(*p.URI, validateEndpointURI)
+	if *partial.URI != "" {
+		parsed, err := parseHTTPURL(*partial.URI)
 		if err != nil {
-			return fmt.Errorf("api.heartbeat.uri: %w", err)
+			return Proxy{}, fmt.Errorf("resolve http.proxy.uri: %w", err)
 		}
 
-		cfg.Heartbeat.URI = uri
+		uri = *parsed
+	} else if *partial.Username != "" || *partial.Password != "" {
+		return Proxy{}, errors.New("resolve http.proxy: credentials require a proxy URI")
 	}
 
-	if p.TLSVerify != nil {
-		cfg.Heartbeat.TLSVerify = *p.TLSVerify
-	}
-
-	if p.CAPath != nil {
-		cfg.Heartbeat.CAPath = strings.TrimSpace(*p.CAPath)
-	}
-
-	return nil
-}
-
-// applyProxy validates and applies HTTP proxy overrides.
-func (cfg *Config) applyProxy(p partialProxy) error {
-	if p.URI != nil {
-		uri, err := applyURI(*p.URI, validateProxyURI)
-		if err != nil {
-			return fmt.Errorf("http.proxy.uri: %w", err)
-		}
-
-		cfg.HTTP.Proxy.URI = uri
-	}
-
-	if p.User != nil {
-		cfg.HTTP.Proxy.User = strings.TrimSpace(*p.User)
-	}
-
-	if p.Password != nil {
-		cfg.HTTP.Proxy.Password = *p.Password
-	}
-
-	return nil
-}
-
-// applyURI accepts an empty override or validates a non-empty URI.
-func applyURI(value string, validate func(string) (string, error)) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", nil
-	}
-
-	return validate(value)
-}
-
-// validateEndpointURI accepts HTTP(S) endpoint URIs without credentials or request data.
-func validateEndpointURI(value string) (string, error) {
-	value = strings.TrimSpace(value)
-
-	u, err := url.ParseRequestURI(value)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
-		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", errors.New("invalid HTTP(S) endpoint URI")
-	}
-
-	return value, nil
-}
-
-// validateProxyURI accepts HTTP(S) proxy URIs without embedded credentials or request data.
-func validateProxyURI(value string) (string, error) {
-	u, err := url.ParseRequestURI(value)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
-		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return "", errors.New("invalid HTTP(S) proxy URI")
-	}
-
-	return value, nil
+	return Proxy{
+		URI:      uri,
+		Username: *partial.Username,
+		Password: *partial.Password,
+		NoProxy:  append([]string{}, (*partial.NoProxy)...),
+	}, nil
 }

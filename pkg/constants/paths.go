@@ -7,6 +7,8 @@ const (
 	ConfigPathEnv = "RHC_HEARTBEAT_CONFIG"
 	// DefaultConfigPath is the default heartbeat configuration file.
 	DefaultConfigPath = "/etc/rhc/rhc-heartbeat.conf"
+	// DefaultDropInDir is the default directory for native configuration drop-ins.
+	DefaultDropInDir = "/etc/rhc/rhc-heartbeat.conf.d/"
 
 	// RHSMPathEnv selects the legacy RHSM configuration file.
 	RHSMPathEnv = "RHC_HEARTBEAT_RHSM_CONFIG"

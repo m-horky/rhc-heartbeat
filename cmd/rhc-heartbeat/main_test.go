@@ -3,11 +3,24 @@ package main
 import (
 	"bytes"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 )
+
+// parseTestURL parses an endpoint used by a runtime warning test.
+func parseTestURL(t *testing.T, value string) url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		t.Fatalf("parse test URL: %v", err)
+	}
+
+	return *parsed
+}
 
 // TestWarnInsecureRemoteWriteTransport verifies warnings for unencrypted or unverified endpoints.
 //
@@ -56,7 +69,7 @@ func TestWarnInsecureRemoteWriteTransport(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			output.Reset()
 			logInsecureTransport(config.Config{
-				Heartbeat: config.Endpoint{URI: test.endpoint, TLSVerify: test.tlsVerify},
+				Heartbeat: config.Endpoint{URI: parseTestURL(t, test.endpoint), TLSVerify: test.tlsVerify},
 			})
 
 			got := output.String()

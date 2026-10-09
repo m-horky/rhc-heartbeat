@@ -4,12 +4,25 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 	"github.com/m-horky/rhc-heartbeat/pkg/version"
 )
+
+// mustParseURL parses a test URL or fails the active test.
+func mustParseURL(t *testing.T, value string) url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		t.Fatalf("parse test URL: %v", err)
+	}
+
+	return *parsed
+}
 
 // TestNewUsesApplicationUserAgent verifies the public upload client supplies the application user agent.
 //
@@ -27,7 +40,7 @@ func TestNewUsesApplicationUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(config.Config{Heartbeat: config.Endpoint{URI: server.URL}})
+	client, err := New(config.Config{Heartbeat: config.Endpoint{URI: mustParseURL(t, server.URL)}})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

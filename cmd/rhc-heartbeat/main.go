@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
@@ -102,11 +101,11 @@ func run(ctx context.Context, args []string) error {
 
 // logInsecureTransport warns when Remote Write traffic is not protected by HTTPS verification.
 func logInsecureTransport(cfg config.Config) {
-	if strings.HasPrefix(cfg.Heartbeat.URI, "http://") {
+	if cfg.Heartbeat.URI.Scheme == "http" {
 		slog.Warn("Remote Write endpoint uses plain HTTP; heartbeat data is not encrypted")
 	}
 
-	if strings.HasPrefix(cfg.Heartbeat.URI, "https://") && !cfg.Heartbeat.TLSVerify {
+	if cfg.Heartbeat.URI.Scheme == "https" && !cfg.Heartbeat.TLSVerify {
 		slog.Warn("Remote Write TLS certificate verification is disabled")
 	}
 }

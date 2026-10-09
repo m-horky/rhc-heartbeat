@@ -43,7 +43,7 @@ type Client struct {
 
 // New constructs a Remote Write client using resolved heartbeat configuration and supplied options.
 func New(cfg config.Config, options Options) (*Client, error) {
-	endpoint, err := validateEndpoint(cfg.Heartbeat.URI)
+	endpoint, err := validateEndpoint(cfg.Heartbeat.URI.String())
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func loadRootCAs(caPath string) (*x509.CertPool, error) {
 		rootCAs = x509.NewCertPool()
 	}
 
-	if caPath == "" {
+	if caPath == "" || caPath == "system" {
 		return rootCAs, nil
 	}
 
@@ -228,33 +228,28 @@ func loadRootCAs(caPath string) (*x509.CertPool, error) {
 
 // configureProxy applies the configured proxy URI and credentials to the transport.
 func configureProxy(transport *http.Transport, proxy config.Proxy) error {
-	if proxy.URI == "" {
-		if proxy.User != "" || proxy.Password != "" {
+	if proxy.URI.String() == "" {
+		if proxy.Username != "" || proxy.Password != "" {
 			return errors.New("configure HTTP proxy: credentials require a proxy URI")
 		}
 
 		return nil
 	}
 
-	proxyURL, err := url.Parse(proxy.URI)
-	if err != nil {
-		return fmt.Errorf("parse HTTP proxy URL: %w", err)
-	}
-
-	if strings.EqualFold(proxyURL.Scheme, "http") &&
-		(proxy.User != "" || proxy.Password != "" || proxyURL.User != nil) {
-		return errors.New("configure HTTP proxy: credentials require an HTTPS proxy URI")
+	proxyURL := proxy.URI
+	if proxyURL.Hostname() == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https") {
+		return errors.New("configure HTTP proxy: invalid proxy URL")
 	}
 
 	if proxyURL.User != nil {
 		return errors.New("configure HTTP proxy: credentials must not be embedded in the proxy URI")
 	}
 
-	if proxy.User != "" || proxy.Password != "" {
-		proxyURL.User = url.UserPassword(proxy.User, proxy.Password)
+	if proxy.Username != "" || proxy.Password != "" {
+		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
 	}
 
-	transport.Proxy = http.ProxyURL(proxyURL)
+	transport.Proxy = http.ProxyURL(&proxyURL)
 
 	return nil
 }

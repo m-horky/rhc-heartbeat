@@ -43,8 +43,8 @@ func run() error {
 
 // redactProxyCredentials replaces configured proxy credentials before configuration is written to stdout.
 func redactProxyCredentials(cfg heartbeatconfig.Config) heartbeatconfig.Config {
-	if cfg.HTTP.Proxy.User != "" {
-		cfg.HTTP.Proxy.User = "..."
+	if cfg.HTTP.Proxy.Username != "" {
+		cfg.HTTP.Proxy.Username = "..."
 	}
 
 	if cfg.HTTP.Proxy.Password != "" {

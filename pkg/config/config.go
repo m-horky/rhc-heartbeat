@@ -3,23 +3,28 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 
 	internalconfig "github.com/m-horky/rhc-heartbeat/internal/config"
+	"github.com/m-horky/rhc-heartbeat/internal/config/rhsm"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
-// Config is the resolved heartbeat configuration.
-type Config = internalconfig.Config
+// Config is the resolved heartbeat configuration exposed to applications.
+type Config struct {
+	Heartbeat Endpoint
+	HTTP      HTTPConfig
+}
 
 // Endpoint describes the heartbeat upload endpoint and its TLS settings.
 type Endpoint = internalconfig.Endpoint
 
 // HTTPConfig contains outgoing HTTP transport settings.
-type HTTPConfig = internalconfig.HTTPConfig
+type HTTPConfig = internalconfig.HTTP
 
-// Proxy describes the HTTP proxy and its optional credentials.
+// Proxy describes the HTTP proxy, its credentials, and bypass rules.
 type Proxy = internalconfig.Proxy
 
 // Get loads heartbeat configuration from environment overrides or the system defaults.
@@ -40,24 +45,38 @@ func Get() (Config, error) {
 		slog.Debug("using configured RHSM configuration", "path", rhsmPath)
 	}
 
-	cfg, err := internalconfig.LoadFromPaths(fs.Filesystem{}, path, rhsmPath)
+	fallback, err := rhsm.Load(fs.Filesystem{}, rhsmPath)
+	if err != nil {
+		return Config{}, fmt.Errorf("load RHSM configuration: %w", err)
+	}
+
+	loaded, err := internalconfig.Load(fs.Filesystem{}, path, constants.DefaultDropInDir, &fallback)
 	if err != nil {
 		return Config{}, fmt.Errorf("load heartbeat configuration: %w", err)
 	}
 
+	cfg := Config{Heartbeat: loaded.API.Heartbeat, HTTP: loaded.HTTP}
+
 	proxyCredentialLogValue := ""
-	if cfg.HTTP.Proxy.User != "" || cfg.HTTP.Proxy.Password != "" {
+	if cfg.HTTP.Proxy.Username != "" || cfg.HTTP.Proxy.Password != "" {
 		proxyCredentialLogValue = "..."
 	}
 
 	slog.Debug("resolved heartbeat configuration",
-		"heartbeat.uri", cfg.Heartbeat.URI,
+		"heartbeat.uri", cfg.Heartbeat.URI.String(),
 		"heartbeat.tls_verify", cfg.Heartbeat.TLSVerify,
 		"heartbeat.ca_path", cfg.Heartbeat.CAPath,
-		"http.proxy.uri", cfg.HTTP.Proxy.URI,
-		"http.proxy.user", proxyCredentialLogValue,
+		"http.proxy.uri", safeURL(cfg.HTTP.Proxy.URI),
+		"http.proxy.username", proxyCredentialLogValue,
 		"http.proxy.password", proxyCredentialLogValue,
 	)
 
 	return cfg, nil
+}
+
+// safeURL returns a URL without user information for diagnostics.
+func safeURL(value url.URL) string {
+	value.User = nil
+
+	return value.String()
 }
