@@ -2,12 +2,25 @@ package main
 
 import (
 	"bytes"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
 	heartbeatconfig "github.com/m-horky/rhc-heartbeat/pkg/config"
 )
+
+// mustParseURL parses a test URL or fails the active test.
+func mustParseURL(t *testing.T, value string) url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		t.Fatalf("parse test URL: %v", err)
+	}
+
+	return *parsed
+}
 
 // TestConfigurationOutputRedactsProxyCredentials verifies serialized configuration does not expose proxy secrets.
 //
@@ -19,8 +32,8 @@ func TestConfigurationOutputRedactsProxyCredentials(t *testing.T) {
 	cfg := heartbeatconfig.Config{
 		HTTP: heartbeatconfig.HTTPConfig{
 			Proxy: heartbeatconfig.Proxy{
-				URI:      "https://proxy.example:8443",
-				User:     "private-user",
+				URI:      mustParseURL(t, "https://proxy.example:8443"),
+				Username: "private-user",
 				Password: "private-password",
 			},
 		},
@@ -42,7 +55,7 @@ func TestConfigurationOutputRedactsProxyCredentials(t *testing.T) {
 		t.Errorf("configuration output = %q, want redaction markers", encoded)
 	}
 
-	if cfg.HTTP.Proxy.User != "private-user" || cfg.HTTP.Proxy.Password != "private-password" {
+	if cfg.HTTP.Proxy.Username != "private-user" || cfg.HTTP.Proxy.Password != "private-password" {
 		t.Error("redacting output modified the resolved configuration")
 	}
 }

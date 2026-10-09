@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -15,6 +16,18 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
+// mustURL parses a test URL or fails the active test.
+func mustURL(t *testing.T, value string) url.URL {
+	t.Helper()
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return url.URL{Path: value}
+	}
+
+	return *parsed
+}
+
 // TestNewRejectsInvalidEndpoint verifies invalid Remote Write endpoint URIs are rejected before use.
 //
 // Given an empty or malformed endpoint URI, when constructing the client, then it returns a validation error.
@@ -22,7 +35,7 @@ func TestNewRejectsInvalidEndpoint(t *testing.T) {
 	t.Parallel()
 
 	for _, endpoint := range []string{"", "://broken", "ftp://prometheus.example.com/write"} {
-		if _, err := New(config.Config{Heartbeat: config.Endpoint{URI: endpoint}}, Options{}); err == nil {
+		if _, err := New(config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, endpoint)}}, Options{}); err == nil {
 			t.Errorf("New(%q) error = nil, want invalid endpoint error", endpoint)
 		}
 	}
@@ -63,7 +76,7 @@ func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
 	defer server.Close()
 
 	client, err := New(
-		config.Config{Heartbeat: config.Endpoint{URI: server.URL}},
+		config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, server.URL)}},
 		Options{UserAgent: "rhc-heartbeat/test"},
 	)
 	if err != nil {
@@ -108,7 +121,7 @@ func TestUploadReturnsErrorForNonSuccessStatus(t *testing.T) {
 	defer server.Close()
 
 	client, err := New(
-		config.Config{Heartbeat: config.Endpoint{URI: server.URL}},
+		config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, server.URL)}},
 		Options{UserAgent: "rhc-heartbeat/test"},
 	)
 	if err != nil {

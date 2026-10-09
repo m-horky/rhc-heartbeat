@@ -1,114 +1,54 @@
 package config
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/m-horky/rhc-heartbeat/internal/config/rhsm"
 )
 
-// TestMapRHSMBuildsRemoteWriteURIFromCandlepin verifies RHSM fields are translated to endpoint and proxy settings.
+// TestTelemetryURIMapsRedHatDomains verifies DNS-label-aware endpoint derivation.
 //
-// Given server and proxy settings, when mapping runs, then it builds origin-based URIs and carries TLS data.
-func TestMapRHSMBuildsRemoteWriteURIFromCandlepin(t *testing.T) {
-	t.Parallel()
-
-	got, err := mapRHSM(rhsmConfiguration{
-		Server: rhsmServer{Hostname: "satellite.example.com", Port: "8443", Insecure: "yes"},
-		RHSM:   rhsmRHSM{RepoCACert: " /etc/pki/satellite-ca.pem "},
-		Proxy:  rhsmProxy{Hostname: "proxy.example.com", Port: "3128", User: " site-user ", Password: "secret"},
-	})
-	if err != nil {
-		t.Fatalf("mapRHSM() error = %v", err)
-	}
-
-	if got.CandlepinURI != "https://satellite.example.com:8443" {
-		t.Errorf("CandlepinURI = %q", got.CandlepinURI)
-	}
-
-	if got.RemoteWriteURI != "https://satellite.example.com:8443/api/v1/write" {
-		t.Errorf("RemoteWriteURI = %q", got.RemoteWriteURI)
-	}
-
-	if !got.Insecure || !got.InsecurePresent {
-		t.Errorf("Insecure = (%v, %v), want (true, true)", got.Insecure, got.InsecurePresent)
-	}
-
-	if got.CAPath != "/etc/pki/satellite-ca.pem" {
-		t.Errorf("CAPath = %q", got.CAPath)
-	}
-
-	proxy := got.Proxy
-	if proxy.URI != "https://proxy.example.com:3128" ||
-		proxy.User != "site-user" || proxy.Password != "secret" {
-		t.Errorf("Proxy = %+v", proxy)
-	}
-}
-
-// TestMapRHSMSupportsIPv6AndNoPrefix verifies Candlepin and Remote Write URI construction for IPv6 hosts.
-//
-// Given an IPv6 hostname without a prefix, when mapping runs, then it brackets the host and appends the write path.
-func TestMapRHSMSupportsIPv6AndNoPrefix(t *testing.T) {
-	t.Parallel()
-
-	got, err := mapRHSM(rhsmConfiguration{Server: rhsmServer{Hostname: "2001:db8::1", Port: "443"}})
-	if err != nil {
-		t.Fatalf("mapRHSM() error = %v", err)
-	}
-
-	if got.CandlepinURI != "https://[2001:db8::1]:443" || got.RemoteWriteURI != "https://[2001:db8::1]:443/api/v1/write" {
-		t.Errorf("URIs = (%q, %q)", got.CandlepinURI, got.RemoteWriteURI)
-	}
-}
-
-// TestMapRHSMRejectsInvalidServerAndProxySettings verifies malformed RHSM values are attributed to their keys.
-//
-// Given incomplete or invalid server and proxy fields, when mapping runs, then it reports the relevant key.
-func TestMapRHSMRejectsInvalidServerAndProxySettings(t *testing.T) {
+// Given stage, production, and unrelated Candlepin hosts, when telemetryURI derives an endpoint,
+// then only matching domain-label suffixes map to Red Hat telemetry services.
+func TestTelemetryURIMapsRedHatDomains(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		conf rhsmConfiguration
-		key  string
+		host string
+		want string
 	}{
-		{
-			name: "missing hostname",
-			conf: rhsmConfiguration{Server: rhsmServer{Port: "443"}},
-			key:  "server.hostname",
-		},
-		{
-			name: "missing port",
-			conf: rhsmConfiguration{Server: rhsmServer{Hostname: "example.com"}},
-			key:  "server.port",
-		},
-		{
-			name: "invalid hostname",
-			conf: rhsmConfiguration{Server: rhsmServer{Hostname: "bad host", Port: "443"}},
-			key:  "server.hostname",
-		},
-		{
-			name: "invalid insecure",
-			conf: rhsmConfiguration{Server: rhsmServer{Insecure: "sometimes"}},
-			key:  "server.insecure",
-		},
-		{
-			name: "missing proxy hostname",
-			conf: rhsmConfiguration{Proxy: rhsmProxy{Port: "3128"}},
-			key:  "proxy.proxy_hostname",
-		},
-		{
-			name: "missing proxy port",
-			conf: rhsmConfiguration{Proxy: rhsmProxy{Hostname: "proxy.example.com"}},
-			key:  "proxy.proxy_port",
-		},
+		{"api.rhsm.stage.redhat.com", "https://cert.console.stage.redhat.com/api/rhel-telemetry/v1/receive"},
+		{"RHSM.REDHAT.COM.", "https://cert.console.redhat.com/api/rhel-telemetry/v1/receive"},
+		{"notrhsm.redhat.com", "https://notrhsm.redhat.com:443/prometheus/api/v1/write"},
+		{"satellite.example.com", "https://satellite.example.com:8443/prometheus/api/v1/write"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	for _, test := range tests {
+		t.Run(test.host, func(t *testing.T) {
+			server := rhsm.Server{Hostname: test.host, Port: 8443}
+			if test.host == "notrhsm.redhat.com" {
+				server.Port = 443
+			}
 
-			_, err := mapRHSM(tt.conf)
-			if err == nil || !strings.Contains(err.Error(), tt.key) {
-				t.Fatalf("mapRHSM() error = %v, want key %q", err, tt.key)
+			got, err := buildTelemetryURI(server)
+			if err != nil {
+				t.Fatalf("telemetryURI() error = %v", err)
+			}
+
+			if got.String() != test.want {
+				t.Errorf("telemetryURI() = %q, want %q", got.String(), test.want)
 			}
 		})
+	}
+}
+
+// TestTelemetryURIRejectsInteriorEmptyLabels verifies malformed domains do not match by suffix.
+//
+// Given a Candlepin hostname containing an empty DNS label, when telemetryURI derives its endpoint,
+// then it returns a hostname validation error.
+func TestTelemetryURIRejectsInteriorEmptyLabels(t *testing.T) {
+	t.Parallel()
+
+	if _, err := buildTelemetryURI(rhsm.Server{Hostname: "subscription..rhsm.redhat.com", Port: 443}); err == nil {
+		t.Fatal("telemetryURI() error = nil, want invalid hostname error")
 	}
 }

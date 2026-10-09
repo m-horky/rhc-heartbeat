@@ -30,8 +30,8 @@ func TestGetUsesConfiguredRHSMPath(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 
-	want := "https://satellite.example.com:8443/api/v1/write"
-	if got.Heartbeat.URI != want {
-		t.Errorf("Get().Heartbeat.URI = %q, want %q", got.Heartbeat.URI, want)
+	want := "https://satellite.example.com:8443/prometheus/api/v1/write"
+	if got.Heartbeat.URI.String() != want {
+		t.Errorf("Get().Heartbeat.URI = %q, want %q", got.Heartbeat.URI.String(), want)
 	}
 }

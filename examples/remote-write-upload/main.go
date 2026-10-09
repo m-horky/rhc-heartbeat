@@ -45,7 +45,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("upload heartbeat: %w", err)
 	}
 
-	slog.Info("heartbeat uploaded", "endpoint", cfg.Heartbeat.URI)
+	slog.Info("heartbeat uploaded", "endpoint", cfg.Heartbeat.URI.String())
 
 	return nil
 }
