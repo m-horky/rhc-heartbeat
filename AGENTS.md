@@ -3,3 +3,4 @@
 - You are not allowed to alter .golangci.yml unless told explicitly. Fix the linter violations instead.
 - Every Go method (public AND private) should have a docstring describing _what_ it does.
 - Every Go unit test should additionally have a gherkin statement further explaining the test: "Given {state}, when {action}, then {reaction}."
+- Every package should have a `doc.go` file, describing how to use its public API, including a snippet demonstrating it.
