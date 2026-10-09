@@ -62,20 +62,29 @@ linters:
   settings:
     depguard:
       rules:
-        pkg_may_import_internal:
-          list-mode: lax
-          files:
-            - "pkg/**"
-          allow:
-            - $gostd
-            - github.com/m-horky/elk/internal/
-        cmd_must_not_import_internal:
+        cmd:
           list-mode: lax
           files:
             - "cmd/**"
           deny:
-            - pkg: github.com/m-horky/rhc-heartbeat/internal/
-              desc: command packages must use the public pkg API
+            - pkg: "github.com/m-horky/rhc-heartbeat/internal/"
+              desc: "cmd/ packages must use pkg/ APIs"
+        pkg:
+          list-mode: lax
+          files:
+            - "pkg/**"
+          deny:
+            - pkg: "github.com/m-horky/rhc-heartbeat/cmd/"
+              desc: "pkg/ packages must not use cmd/ APIs"
+        internal:
+          list-mode: lax
+          files:
+            - "internal/**"
+          deny:
+            - pkg: "github.com/m-horky/rhc-heartbeat/cmd/"
+              desc: "internal/ packages must not use cmd/ APIs"
+            - pkg: "github.com/m-horky/rhc-heartbeat/pkg/"
+              desc: "internal/ packages must not use pkg/ APIs"
   exclusions:
     rules:
       # Linux syscall and interface details are intentional in the filesystem adapter.
