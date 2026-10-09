@@ -2,8 +2,7 @@
 // metadata and vCPU count, from subscription-manager facts.
 //
 // Get reads facts from the local subscription-manager command and derives a
-// profile. Missing facts remain empty and do not cause an error; malformed
-// vCPU counts are rejected.
+// profile.
 //
 // To read marketplace metadata and the vCPU count:
 //
@@ -12,6 +11,9 @@
 //		return err
 //	}
 //	marketplace := systemProfile.MarketplaceID
-//	vcpuCount := systemProfile.VCPUCount
+//	var vcpuCount uint64
+//	if systemProfile.VCPUCount != nil {
+//		vcpuCount = *systemProfile.VCPUCount
+//	}
 //	_, _ = marketplace, vcpuCount
 package profile

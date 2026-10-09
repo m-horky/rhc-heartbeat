@@ -51,6 +51,54 @@ func TestEncodeHeartbeatsProducesSortedRemoteWriteSeries(t *testing.T) {
 	assertEncodedSamples(t, schema, series)
 }
 
+// TestEncodeHeartbeatsEmitsExtendedPayloadLabels verifies optional profile data reaches the Remote Write labels.
+//
+// Given a heartbeat with marketplace, CPU, and product details, when encoded, then those details are labeled
+// and ID lists use comma-separated values.
+func TestEncodeHeartbeatsEmitsExtendedPayloadLabels(t *testing.T) {
+	t.Parallel()
+
+	payload, err := encodeHeartbeats([]heartbeat.Heartbeat{{
+		HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing,
+		MarketplaceID: "aws", MarketplaceAccountID: "account", MarketplaceInstanceID: "instance",
+		MarketplaceOfferIDs: []string{"offer-a", "offer-b"}, VCPUCount: new(uint64(16)),
+		ProductIDs: []string{"product-a", "product-b"},
+	}})
+	if err != nil {
+		t.Fatalf("encodeHeartbeats() error = %v", err)
+	}
+
+	schema := newRemoteWriteMessages()
+
+	request := dynamicpb.NewMessage(schema.writeRequest)
+	if err := proto.Unmarshal(payload, request); err != nil {
+		t.Fatalf("unmarshal Remote Write protobuf: %v", err)
+	}
+
+	series := request.Get(schema.writeRequest.Fields().ByName("timeseries")).List().Get(0).Message()
+	labels := series.Get(schema.timeSeries.Fields().ByName("labels")).List()
+
+	labelValues := make(map[string]string, labels.Len())
+	for index := 0; index < labels.Len(); index++ {
+		current := labels.Get(index).Message()
+		name := current.Get(schema.label.Fields().ByName("name")).String()
+		labelValues[name] = current.Get(schema.label.Fields().ByName("value")).String()
+	}
+
+	for name, want := range map[string]string{
+		"marketplace_id":          "aws",
+		"marketplace_account_id":  "account",
+		"marketplace_instance_id": "instance",
+		"marketplace_offer_ids":   "offer-a,offer-b",
+		"vcpu_count":              "16",
+		"product_ids":             "product-a,product-b",
+	} {
+		if labelValues[name] != want {
+			t.Errorf("label %q = %q, want %q", name, labelValues[name], want)
+		}
+	}
+}
+
 // TestEncodeHeartbeatsEmitsSupportedKindLabels verifies each heartbeat enum reaches the Remote Write label unchanged.
 //
 // Given heartbeats with each supported kind

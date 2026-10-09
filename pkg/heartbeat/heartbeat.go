@@ -3,54 +3,42 @@ package heartbeat
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/m-horky/rhc-heartbeat/internal/bootid"
 	"github.com/m-horky/rhc-heartbeat/internal/clock"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
+	"github.com/m-horky/rhc-heartbeat/pkg/products"
+	"github.com/m-horky/rhc-heartbeat/pkg/profile"
 )
 
-// Kind identifies why a heartbeat was collected.
-type Kind string
-
-const (
-	// KindOn identifies a heartbeat reporting that the system is able to send updates.
-	KindOn Kind = "on"
-	// KindOff identifies that the system is not expected to be able to send updates for the foreseeable future.
-	KindOff Kind = "off"
-	// KindPing identifies a periodic heartbeat.
-	KindPing Kind = "ping"
-)
-
-// Valid reports whether kind is one of the supported heartbeat kinds.
-func (kind Kind) Valid() bool {
-	switch kind {
-	case KindOn, KindOff, KindPing:
-		return true
-	default:
-		return false
-	}
-}
-
-// Heartbeat contains the system identity and time data collected for one event.
-// TimeMonotonic is CLOCK_MONOTONIC elapsed time since boot, TimeBoottime is
-// CLOCK_BOOTTIME elapsed time since boot including suspend, and TimeUnix is the
-// CLOCK_REALTIME timestamp of the event. All preserve nanosecond resolution.
+// Heartbeat contains system profile data and time.
 type Heartbeat struct {
-	HostID        string
-	HostOrg       string
-	BootID        string
-	TimeMonotonic time.Duration
-	TimeBoottime  time.Duration
-	TimeUnix      time.Time
-	Kind          Kind
+	HostID                string
+	HostOrg               string
+	BootID                string
+	TimeMonotonic         time.Duration
+	TimeBoottime          time.Duration
+	TimeUnix              time.Time
+	Kind                  Kind
+	MarketplaceID         string
+	MarketplaceAccountID  string
+	MarketplaceInstanceID string
+	MarketplaceOfferIDs   []string
+	VCPUCount             *uint64
+	ProductIDs            []string
 }
 
+// sources groups heartbeat inputs so collect can be tested with deterministic readers
+// while Get uses system implementations.
 type sources struct {
-	readIdentity func() (consumer.Identity, error)
-	readBootID   func() (string, error)
-	readClock    func() (clock.Reading, error)
+	readIdentity   func() (consumer.Identity, error)
+	readBootID     func() (string, error)
+	readClock      func() (clock.Reading, error)
+	readProfile    func() (profile.Profile, error)
+	readProductIDs func() ([]string, error)
 }
 
 // Get collects a heartbeat using the system defaults and the requested kind.
@@ -60,7 +48,9 @@ func Get(ctx context.Context, kind Kind) (Heartbeat, error) {
 		readBootID: func() (string, error) {
 			return bootid.Read(fs.Filesystem{})
 		},
-		readClock: clock.Read,
+		readClock:      clock.Read,
+		readProfile:    profile.Get,
+		readProductIDs: products.Get,
 	})
 }
 
@@ -89,6 +79,20 @@ func collect(ctx context.Context, kind Kind, source sources) (Heartbeat, error) 
 		return Heartbeat{}, fmt.Errorf("read heartbeat clocks: %w", err)
 	}
 
+	systemProfile, err := source.readProfile()
+	if err != nil {
+		slog.Warn("cannot read heartbeat system profile", "err", err)
+
+		systemProfile = profile.Profile{}
+	}
+
+	productIDs, err := source.readProductIDs()
+	if err != nil {
+		slog.Warn("cannot read heartbeat product IDs", "err", err)
+
+		productIDs = nil
+	}
+
 	monotonicTime := time.Duration(clockReading.TimeMonotonic.Sec)*time.Second +
 		time.Duration(clockReading.TimeMonotonic.Nsec)
 	boottime := time.Duration(clockReading.TimeBoottime.Sec)*time.Second +
@@ -96,12 +100,18 @@ func collect(ctx context.Context, kind Kind, source sources) (Heartbeat, error) 
 	unixTime := time.Unix(clockReading.Time.Sec, clockReading.Time.Nsec).UTC()
 
 	return Heartbeat{
-		HostID:        identity.UUID,
-		HostOrg:       identity.OrgID,
-		BootID:        bootID,
-		TimeMonotonic: monotonicTime,
-		TimeBoottime:  boottime,
-		TimeUnix:      unixTime,
-		Kind:          kind,
+		HostID:                identity.UUID,
+		HostOrg:               identity.OrgID,
+		BootID:                bootID,
+		TimeMonotonic:         monotonicTime,
+		TimeBoottime:          boottime,
+		TimeUnix:              unixTime,
+		Kind:                  kind,
+		MarketplaceID:         systemProfile.MarketplaceID,
+		MarketplaceAccountID:  systemProfile.MarketplaceAccountID,
+		MarketplaceInstanceID: systemProfile.MarketplaceInstanceID,
+		MarketplaceOfferIDs:   systemProfile.MarketplaceOfferIDs,
+		VCPUCount:             systemProfile.VCPUCount,
+		ProductIDs:            productIDs,
 	}, nil
 }
