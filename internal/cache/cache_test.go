@@ -23,7 +23,12 @@ func TestCacheAppendAndReadAll(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
 	cache := New(fs.Filesystem{}, path)
 	want := []heartbeat.Heartbeat{
-		{HostID: "first", TimeUnix: time.Date(2025, 1, 2, 3, 4, 5, 6, time.UTC)},
+		{
+			HostID: "first", TimeUnix: time.Date(2025, 1, 2, 3, 4, 5, 6, time.UTC),
+			MarketplaceID: "aws", MarketplaceAccountID: "account", MarketplaceInstanceID: "instance",
+			MarketplaceOfferIDs: []string{"offer-a", "offer-b"}, VCPUCount: new(uint64(4)),
+			ProductIDs: []string{"product-a", "product-b"},
+		},
 		{HostID: "second", Kind: heartbeat.KindPing},
 	}
 

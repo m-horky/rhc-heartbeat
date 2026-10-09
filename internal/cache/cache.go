@@ -1,4 +1,3 @@
-// Package cache stores pending heartbeats as JSONL on the local filesystem.
 package cache
 
 import (

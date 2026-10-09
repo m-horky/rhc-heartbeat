@@ -3,12 +3,14 @@ package heartbeat
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/m-horky/rhc-heartbeat/internal/clock"
 	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
+	"github.com/m-horky/rhc-heartbeat/pkg/profile"
 	"golang.org/x/sys/unix"
 )
 
@@ -65,6 +67,44 @@ func TestCollectAssemblesHeartbeat(t *testing.T) {
 
 	if got.Kind != KindOff {
 		t.Errorf("Kind = %q, want %q", got.Kind, KindOff)
+	}
+}
+
+// TestCollectIncludesExtendedProfile verifies marketplace, CPU, and product data are carried into a heartbeat.
+//
+// Given successful profile and product sources, when collecting, then every extended field is preserved.
+func TestCollectIncludesExtendedProfile(t *testing.T) {
+	t.Parallel()
+
+	source := testSources()
+	source.readProfile = func() (profile.Profile, error) {
+		return profile.Profile{
+			MarketplaceID: "aws", MarketplaceAccountID: "account-id", MarketplaceInstanceID: "instance-id",
+			MarketplaceOfferIDs: []string{"offer-a", "offer-b"}, VCPUCount: new(uint64(8)),
+		}, nil
+	}
+	source.readProductIDs = func() ([]string, error) { return []string{"product-a", "product-b"}, nil }
+
+	got, err := collect(context.Background(), KindPing, source)
+	if err != nil {
+		t.Fatalf("collect() error = %v", err)
+	}
+
+	if got.MarketplaceID != "aws" || got.MarketplaceAccountID != "account-id" ||
+		got.MarketplaceInstanceID != "instance-id" {
+		t.Errorf("marketplace identity = %#v, want AWS account and instance details", got)
+	}
+
+	if !slices.Equal(got.MarketplaceOfferIDs, []string{"offer-a", "offer-b"}) {
+		t.Errorf("MarketplaceOfferIDs = %#v, want [offer-a offer-b]", got.MarketplaceOfferIDs)
+	}
+
+	if got.VCPUCount == nil || *got.VCPUCount != 8 {
+		t.Errorf("VCPUCount = %v, want 8", got.VCPUCount)
+	}
+
+	if !slices.Equal(got.ProductIDs, []string{"product-a", "product-b"}) {
+		t.Errorf("ProductIDs = %#v, want [product-a product-b]", got.ProductIDs)
 	}
 }
 
@@ -174,6 +214,52 @@ func TestCollectWrapsSourceErrors(t *testing.T) {
 	}
 }
 
+// TestCollectContinuesWhenProfileReadFails verifies system profile data is optional enrichment.
+//
+// Given the system profile source fails, when collecting, then the heartbeat is returned without profile data.
+func TestCollectContinuesWhenProfileReadFails(t *testing.T) {
+	t.Parallel()
+
+	source := testSources()
+	source.readProfile = func() (profile.Profile, error) { return profile.Profile{}, errors.New("source unavailable") }
+
+	got, err := collect(context.Background(), KindPing, source)
+	if err != nil {
+		t.Fatalf("collect() error = %v, want successful heartbeat without profile data", err)
+	}
+
+	if got.VCPUCount != nil || got.MarketplaceID != "" {
+		t.Errorf("profile fields = %#v, want empty values after profile read failure", got)
+	}
+
+	if got.HostID != "test-uuid" || got.Kind != KindPing {
+		t.Errorf("heartbeat = %#v, want collected identity and kind", got)
+	}
+}
+
+// TestCollectContinuesWhenProductIDReadFails verifies product IDs are optional enrichment.
+//
+// Given product ID reading fails, when collecting, then the heartbeat is returned without product IDs.
+func TestCollectContinuesWhenProductIDReadFails(t *testing.T) {
+	t.Parallel()
+
+	source := testSources()
+	source.readProductIDs = func() ([]string, error) { return nil, errors.New("certificate unavailable") }
+
+	got, err := collect(context.Background(), KindPing, source)
+	if err != nil {
+		t.Fatalf("collect() error = %v, want successful heartbeat without product IDs", err)
+	}
+
+	if got.ProductIDs != nil {
+		t.Errorf("ProductIDs = %#v, want nil when product ID reading fails", got.ProductIDs)
+	}
+
+	if got.HostID != "test-uuid" || got.Kind != KindPing {
+		t.Errorf("heartbeat = %#v, want collected identity and kind", got)
+	}
+}
+
 // testSources returns successful heartbeat sources for collection tests.
 func testSources() sources {
 	return sources{
@@ -190,5 +276,7 @@ func testSources() sources {
 				Time:          unix.Timespec{Sec: 1, Nsec: 3},
 			}, nil
 		},
+		readProfile:    func() (profile.Profile, error) { return profile.Profile{VCPUCount: new(uint64(2))}, nil },
+		readProductIDs: func() ([]string, error) { return []string{}, nil },
 	}
 }

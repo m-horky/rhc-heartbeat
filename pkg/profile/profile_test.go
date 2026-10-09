@@ -1,6 +1,9 @@
 package profile
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestParseDerivesMarketplaceAndVCPU verifies AWS fields and CPU count are transformed from facts.
 //
@@ -33,6 +36,27 @@ func TestParseDerivesMarketplaceAndVCPU(t *testing.T) {
 	}
 }
 
+// TestParseSortsMarketplaceOfferIDs verifies marketplace offer values have deterministic order.
+//
+// Given marketplace offer facts in arbitrary order, when parsed, then unique offers are returned sorted.
+func TestParseSortsMarketplaceOfferIDs(t *testing.T) {
+	t.Parallel()
+
+	got, err := extractFacts(map[string]string{
+		"lscpu.cpu(s)":                  "4",
+		"aws_billing_products":          "offer-z, offer-a",
+		"aws_marketplace_product_codes": "offer-m,offer-a",
+	})
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+
+	want := []string{"offer-a", "offer-m", "offer-z"}
+	if !slices.Equal(got.MarketplaceOfferIDs, want) {
+		t.Errorf("MarketplaceOfferIDs = %#v, want %#v", got.MarketplaceOfferIDs, want)
+	}
+}
+
 // TestParseMapsAzureAndGCPFields verifies each cloud provider uses its own fact names.
 //
 // Given Azure or GCP marketplace facts, when parsed,
@@ -51,6 +75,7 @@ func TestParseMapsAzureAndGCPFields(t *testing.T) {
 		{
 			name: "azure",
 			facts: map[string]string{
+				"lscpu.cpu(s)":          "4",
 				"azure_instance_id":     "azure-vm",
 				"azure_subscription_id": "subscription",
 				"azure_offer":           "rhel-ha, rhel-sap",
@@ -61,6 +86,7 @@ func TestParseMapsAzureAndGCPFields(t *testing.T) {
 		{
 			name: "gcp",
 			facts: map[string]string{
+				"lscpu.cpu(s)":       "4",
 				"gcp_instance_id":    "gcp-vm",
 				"gcp_project_number": "1234",
 				"gcp_license_codes":  "license-a,license-b",
@@ -90,32 +116,55 @@ func TestParseMapsAzureAndGCPFields(t *testing.T) {
 	}
 }
 
-// TestParseLeavesAbsentFactsEmpty verifies non-marketplace machines need not provide cloud data.
+// TestParseLeavesAbsentMarketplaceFactsEmpty verifies non-marketplace machines need not provide cloud data.
 //
-// Given no cloud or CPU facts, when parsed, then optional fields remain empty without an error.
-func TestParseLeavesAbsentFactsEmpty(t *testing.T) {
+// Given a valid CPU fact and no cloud facts, when parsed, then marketplace fields remain empty.
+func TestParseLeavesAbsentMarketplaceFactsEmpty(t *testing.T) {
 	t.Parallel()
 
-	got, err := extractFacts(map[string]string{"unrelated_fact": "value"})
+	got, err := extractFacts(map[string]string{"unrelated_fact": "value", "lscpu.cpu(s)": "2"})
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
 
 	if got.MarketplaceID != "" || got.MarketplaceAccountID != "" || got.MarketplaceInstanceID != "" ||
-		len(got.MarketplaceOfferIDs) != 0 || got.VCPUCount != nil {
+		len(got.MarketplaceOfferIDs) != 0 || got.VCPUCount == nil || *got.VCPUCount != 2 {
 		t.Errorf("extractFacts() = %#v, want empty optional fields", got)
 	}
 }
 
-// TestParseRejectsInvalidVCPU verifies invalid CPU facts are not silently converted.
+// TestParseLeavesMissingVCPUEmpty verifies an absent CPU fact does not block profile parsing.
 //
-// Given a present but invalid CPU fact, when parsed, then an error is returned.
-func TestParseRejectsInvalidVCPU(t *testing.T) {
+// Given a profile with no CPU count, when parsed, then the profile is returned with a zero vCPU count.
+func TestParseLeavesMissingVCPUEmpty(t *testing.T) {
+	t.Parallel()
+
+	got, err := extractFacts(map[string]string{"aws_instance_id": "instance"})
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+
+	if got.VCPUCount != nil {
+		t.Errorf("extractFacts() VCPUCount = %v, want nil", got.VCPUCount)
+	}
+}
+
+// TestParseLeavesInvalidVCPUEmpty verifies invalid CPU facts do not block profile parsing.
+//
+// Given a missing or invalid CPU fact, when parsed, then the profile is returned with a zero vCPU count.
+func TestParseLeavesInvalidVCPUEmpty(t *testing.T) {
 	t.Parallel()
 
 	for _, value := range []string{"many", "0", "-1"} {
-		if _, err := extractFacts(map[string]string{"lscpu.cpu(s)": value}); err == nil {
-			t.Errorf("extractFacts() with CPU fact %q error = nil, want an error", value)
+		got, err := extractFacts(map[string]string{"lscpu.cpu(s)": value})
+		if err != nil {
+			t.Errorf("extractFacts() with CPU fact %q error = %v", value, err)
+
+			continue
+		}
+
+		if got.VCPUCount != nil {
+			t.Errorf("extractFacts() with CPU fact %q VCPUCount = %v, want nil", value, got.VCPUCount)
 		}
 	}
 }
@@ -127,7 +176,7 @@ func TestParseRejectsInvalidVCPU(t *testing.T) {
 func TestParseDetectsProviderFromAnyKnownFact(t *testing.T) {
 	t.Parallel()
 
-	got, err := extractFacts(map[string]string{"azure_region": "region"})
+	got, err := extractFacts(map[string]string{"azure_region": "region", "lscpu.cpu(s)": "2"})
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}

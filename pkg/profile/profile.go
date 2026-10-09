@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -9,7 +10,7 @@ import (
 	"github.com/m-horky/rhc-heartbeat/internal/subman"
 )
 
-// Profile contains system identity and marketplace data, plus the system's vCPU count.
+// Profile contains system profile and marketplace data.
 type Profile struct {
 	MarketplaceID         string
 	MarketplaceAccountID  string
@@ -68,12 +69,8 @@ func Get() (Profile, error) {
 func extractFacts(facts map[string]string) (Profile, error) {
 	profile := Profile{}
 
-	if rawCount, exists := facts["lscpu.cpu(s)"]; exists && strings.TrimSpace(rawCount) != "" {
-		count, err := strconv.ParseUint(strings.TrimSpace(rawCount), 10, 64)
-		if err != nil || count == 0 {
-			return Profile{}, fmt.Errorf("invalid lscpu.cpu(s) fact %q", rawCount)
-		}
-
+	rawCount := strings.TrimSpace(facts["lscpu.cpu(s)"])
+	if count, err := strconv.ParseUint(rawCount, 10, 64); err == nil && count > 0 {
 		profile.VCPUCount = &count
 	}
 
@@ -122,6 +119,8 @@ func collectOffers(facts map[string]string, keys []string) []string {
 	for offer := range offerSet {
 		offers = append(offers, offer)
 	}
+
+	sort.Strings(offers)
 
 	return offers
 }

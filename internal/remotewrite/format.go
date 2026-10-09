@@ -1,9 +1,9 @@
-// Package remotewrite encodes and uploads heartbeat samples using Prometheus Remote Write 1.0.
 package remotewrite
 
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
@@ -174,9 +174,28 @@ func heartbeatLabels(hb heartbeat.Heartbeat) []label {
 		{name: "org_id", value: hb.HostOrg},
 		{name: "system_uuid", value: hb.HostID},
 	}
+
+	appendOptionalLabel(&labels, "marketplace_id", hb.MarketplaceID)
+	appendOptionalLabel(&labels, "marketplace_account_id", hb.MarketplaceAccountID)
+	appendOptionalLabel(&labels, "marketplace_instance_id", hb.MarketplaceInstanceID)
+	appendOptionalLabel(&labels, "marketplace_offer_ids", strings.Join(hb.MarketplaceOfferIDs, ","))
+
+	if hb.VCPUCount != nil && *hb.VCPUCount > 0 {
+		appendOptionalLabel(&labels, "vcpu_count", strconv.FormatUint(*hb.VCPUCount, 10))
+	}
+
+	appendOptionalLabel(&labels, "product_ids", strings.Join(hb.ProductIDs, ","))
+
 	sort.Slice(labels, func(i, j int) bool { return labels[i].name < labels[j].name })
 
 	return labels
+}
+
+// appendOptionalLabel adds a non-empty optional label to the label set.
+func appendOptionalLabel(labels *[]label, name, value string) {
+	if value != "" {
+		*labels = append(*labels, label{name: name, value: value})
+	}
 }
 
 // labelSetKey returns an unambiguous key for a sorted set of labels.

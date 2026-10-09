@@ -14,6 +14,7 @@
   - [x] Store typed heartbeat objects as one JSON value per line in `/var/lib/rhc/heartbeat.jsonl`
   - [x] Keep a single heartbeat event per boot
   - [x] Retain pending heartbeats for at least 72 hours and remove them after successful delivery
+- [x] Extended payload
 - [x] Protocol
   - [x] Use ProtoBuf (google.golang.org/protobuf)
   - [x] Use Prometheus Remote Write
@@ -25,4 +26,5 @@
   - [ ] SELinux policy code
   - [ ] SELinux policy subpackage
   - [x] Process locking: Create a global process lock that sleeps until the lock lifts
-  - [ ] Correctly derive Observatorium URL from the Candlepin URL
+  - [x] Correctly derive Observatorium URL from the Candlepin URL
+
