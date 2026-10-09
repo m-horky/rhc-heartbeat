@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"log/slog"
 
 	internalcache "github.com/m-horky/rhc-heartbeat/internal/cache"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
@@ -13,6 +14,7 @@ import (
 type Cache struct {
 	implementation *internalcache.Cache
 	heartbeats     []heartbeat.Heartbeat
+	persistedCount int
 }
 
 // Load reads pending heartbeats from path. A missing file produces an empty cache.
@@ -28,6 +30,8 @@ func Load(path string) (*Cache, error) {
 	for _, hb := range heartbeats {
 		loaded.Add(hb)
 	}
+
+	loaded.persistedCount = len(loaded.heartbeats)
 
 	return loaded, nil
 }
@@ -64,6 +68,17 @@ func (cache *Cache) Save() error {
 	if err := cache.implementation.Rewrite(cache.heartbeats); err != nil {
 		return fmt.Errorf("save pending heartbeats: %w", err)
 	}
+
+	currentCount := len(cache.heartbeats)
+	if cache.persistedCount > 0 && currentCount == 0 {
+		slog.Debug("heartbeat cache cleared")
+	}
+
+	if cache.persistedCount < currentCount {
+		slog.Debug("pending heartbeats saved")
+	}
+
+	cache.persistedCount = currentCount
 
 	return nil
 }
