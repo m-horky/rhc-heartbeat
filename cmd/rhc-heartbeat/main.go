@@ -124,8 +124,6 @@ func handleUploadSuccess(hbCache *cache.Cache) error {
 
 // handleUploadFailure saves pending heartbeats and returns the upload error.
 func handleUploadFailure(hbCache *cache.Cache, uploadErr error) error {
-	slog.Error("heartbeat upload failed", "err", uploadErr)
-
 	if err := hbCache.Save(); err == nil {
 		slog.Info("heartbeat cache saved")
 	} else {
