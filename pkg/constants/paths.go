@@ -32,6 +32,11 @@ const (
 	ClientKeyPathEnv = "RHC_HEARTBEAT_CLIENT_KEY_PATH"
 	// DefaultClientKeyPath is the default client key used for Remote Write mutual TLS.
 	DefaultClientKeyPath = "/etc/pki/consumer/key.pem"
+
+	// DefaultProductCertificateDefaultDir contains default product certificates.
+	DefaultProductCertificateDefaultDir = "/etc/pki/product-default"
+	// DefaultProductCertificateDir contains installed product certificates.
+	DefaultProductCertificateDir = "/etc/pki/product"
 )
 
 // PathFromEnv returns the environment variable's path, or defaultPath when it is unset or empty.
