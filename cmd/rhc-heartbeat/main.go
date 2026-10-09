@@ -119,8 +119,6 @@ func handleUploadSuccess(hbCache *cache.Cache) error {
 		return fmt.Errorf("cannot clear heartbeat cache: %w", err)
 	}
 
-	slog.Debug("heartbeat cache cleared")
-
 	return nil
 }
 
