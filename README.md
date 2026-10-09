@@ -22,8 +22,16 @@ Format Go code with `make fmt`.
 For local end-to-end testing, Podman is required to run Prometheus with its Remote Write receiver enabled.
 
 ```shell
+$ mkdir -p /var/lib/rhc
 $ make server &
 $ make build >/dev/null && RHC_HEARTBEAT_CONFIG=test/dev.toml ./build/rhc-heartbeat
+```
+
+A TLS certificate keypair must be present. Either register with subscription-manager, or generate one with openssl:
+
+```shell
+mkdir -p /etc/pki/consumer/
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 7 -keyout /etc/pki/consumer/key.pem -out /etc/pki/consumer/cert.pem -subj "/O=20008437/CN=test-client" -addext "extendedKeyUsage=clientAuth"
 ```
 
 ## License

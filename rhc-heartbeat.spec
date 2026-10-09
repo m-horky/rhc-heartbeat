@@ -15,6 +15,8 @@ Source0:        %{gosource}
 Source1:        %{archivename}-vendor.tar.bz2
 Source2:        go-vendor-tools.toml
 
+Requires:       subscription-manager
+
 BuildRequires:  systemd-rpm-macros
 %if %{with go_vendor_tools}
 BuildRequires:  go-vendor-tools
@@ -22,9 +24,8 @@ BuildRequires:  askalono-cli
 %endif
 
 %description
-rhc-heartbeat collects system uptime, wall-clock time, and
-time-synchronization status. It uploads the heartbeat to an
-Prometheus Remote Write endpoint.
+rhc-heartbeat collects system profile and monotonic time.
+It uploads the heartbeat to an Prometheus Remote Write endpoint.
 
 %prep
 # Unpack Source0 and set up the go build directory. Since -k is not passed in,
@@ -58,6 +59,7 @@ install -m 0755 -vp %{gobuilddir}/bin/* %{buildroot}%{_bindir}/
 # Configuration
 install -m 0755 -vd                     %{buildroot}%{_prefix}/lib/rhc/
 install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/
+install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/rhc-heartbeat.conf.d/
 
 # Systemd units
 install -m 0755 -vd                     %{buildroot}%{_unitdir}
@@ -82,12 +84,17 @@ install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_u
 %files %{extra_files}
 # Binaries
 %{_bindir}/rhc-heartbeat
+# Runtime and configuration directories
+%dir %{_prefix}/lib/rhc/
+%dir %{_sysconfdir}/rhc/
+%dir %{_sysconfdir}/rhc/rhc-heartbeat.conf.d/
 # Systemd units
 %{_unitdir}/rhc-heartbeat.timer
 %{_unitdir}/rhc-heartbeat.service
 %{_unitdir}/rhc-heartbeat-sleep.service
 %{_unitdir}/rhc-heartbeat-off.service
 # Documentation
+%license LICENSE
 %doc README.md SECURITY.md
 
 %changelog

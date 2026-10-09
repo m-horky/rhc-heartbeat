@@ -1,2 +1,5 @@
+[http.proxy]
+uri = ""
+
 [api.heartbeat]
 uri = "http://10.88.0.1:9090/api/v1/write"
