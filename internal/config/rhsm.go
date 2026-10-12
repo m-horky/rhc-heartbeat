@@ -93,11 +93,15 @@ func buildProxyURI(server rhsm.Server) (url.URL, error) {
 		return url.URL{}, errors.New("invalid RHSM proxy scheme")
 	}
 
-	return url.URL{
+	proxy := url.URL{
 		Scheme: scheme,
 		Host:   net.JoinHostPort(host, strconv.Itoa(int(port))),
-		User:   url.UserPassword(server.ProxyUser, server.ProxyPassword),
-	}, nil
+	}
+	if server.ProxyUser != "" || server.ProxyPassword != "" {
+		proxy.User = url.UserPassword(server.ProxyUser, server.ProxyPassword)
+	}
+
+	return proxy, nil
 }
 
 // hasLabelSuffix compares DNS labels against a provided DNS label suffix.

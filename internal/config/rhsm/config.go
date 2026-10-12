@@ -1,6 +1,7 @@
 package rhsm
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -40,9 +41,14 @@ type RHSM struct {
 func (partial dtoConfig) resolve() (Config, error) {
 	server := partial.Server
 
-	candlepin, err := resolveURI("https", *server.Hostname, *server.Port, *server.Prefix)
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve server: %w", err)
+	if server.Hostname == nil || server.Port == nil {
+		return Config{}, errors.New("resolve server: hostname and port are required")
+	}
+
+	candlepin := url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(*server.Hostname, *server.Port),
+		Path:   *server.Prefix,
 	}
 
 	candlepinPort, err := strconv.ParseUint(*server.Port, 10, 16)
@@ -50,12 +56,13 @@ func (partial dtoConfig) resolve() (Config, error) {
 		return Config{}, fmt.Errorf("parse server port: %w", err)
 	}
 
-	proxy, err := resolveURI(*server.ProxyScheme, *server.ProxyHostname, *server.ProxyPort, "")
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve proxy: %w", err)
+	var proxyPort uint64
+	if server.ProxyHostname != nil && *server.ProxyHostname != "" && server.ProxyPort != nil && *server.ProxyPort != "" {
+		proxyPort, err = strconv.ParseUint(*server.ProxyPort, 10, 16)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse proxy port: %w", err)
+		}
 	}
-
-	proxyPassword, _ := proxy.User.Password()
 
 	caDir := *partial.RHSM.CACertDir
 	repoCACert := strings.ReplaceAll(*partial.RHSM.RepoCACert, "%(ca_cert_dir)s", caDir)
@@ -66,10 +73,11 @@ func (partial dtoConfig) resolve() (Config, error) {
 			Prefix:        candlepin.Path,
 			Port:          uint16(candlepinPort),
 			TLSVerify:     !*server.Insecure,
-			ProxyHostname: proxy.Host,
-			ProxyScheme:   proxy.Scheme,
-			ProxyUser:     proxy.User.Username(),
-			ProxyPassword: proxyPassword,
+			ProxyHostname: *server.ProxyHostname,
+			ProxyScheme:   *server.ProxyScheme,
+			ProxyPort:     uint16(proxyPort),
+			ProxyUser:     *server.ProxyUser,
+			ProxyPassword: *server.ProxyPassword,
 			NoProxy:       *server.NoProxy,
 		},
 		RHSM: RHSM{
@@ -77,18 +85,4 @@ func (partial dtoConfig) resolve() (Config, error) {
 			RepoCACert: repoCACert,
 		},
 	}, nil
-}
-
-func resolveURI(scheme, hostname, port, prefix string) (url.URL, error) {
-	if hostname == "" {
-		return url.URL{}, nil
-	}
-
-	if scheme == "" {
-		scheme = "https"
-	}
-
-	parsed := &url.URL{Scheme: scheme, Host: net.JoinHostPort(hostname, port), Path: prefix}
-
-	return *parsed, nil
 }
