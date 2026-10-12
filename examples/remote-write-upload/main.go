@@ -30,7 +30,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("load heartbeat configuration: %w", err)
 	}
 
-	hb, err := heartbeat.Get(ctx, heartbeat.KindPing)
+	hb, err := heartbeat.Get(heartbeat.KindPing)
 	if err != nil {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}

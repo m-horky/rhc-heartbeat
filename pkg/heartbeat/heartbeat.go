@@ -1,7 +1,6 @@
 package heartbeat
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -32,7 +31,7 @@ type Heartbeat struct {
 }
 
 // Get collects a heartbeat using the system defaults and the requested kind.
-func Get(_ context.Context, kind Kind) (Heartbeat, error) {
+func Get(kind Kind) (Heartbeat, error) {
 	// Go is making is handle the situations where some portion of the collection fails.
 	// In real conditions, it should be very rare to impossible for it to happen.
 	//

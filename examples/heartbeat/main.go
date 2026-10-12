@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -23,7 +22,7 @@ func main() {
 
 // run collects a periodic heartbeat and writes it as indented JSON.
 func run() error {
-	hb, err := heartbeat.Get(context.Background(), heartbeat.KindPing)
+	hb, err := heartbeat.Get(heartbeat.KindPing)
 	if err != nil {
 		return fmt.Errorf("collect heartbeat: %w", err)
 	}

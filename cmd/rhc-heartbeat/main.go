@@ -83,7 +83,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	// Collect current heartbeat.
-	hb, err := heartbeat.Get(ctx, kind)
+	hb, err := heartbeat.Get(kind)
 	if err != nil {
 		return fmt.Errorf("cannot collect heartbeat: %w", err)
 	}
