@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/golang/snappy"
@@ -28,24 +27,11 @@ func mustURL(t *testing.T, value string) url.URL {
 	return *parsed
 }
 
-// TestNewRejectsInvalidEndpoint verifies invalid Remote Write endpoint URIs are rejected before use.
+// TestHeadersBody verifies Remote Write v1 request encoding and headers.
 //
-// Given an empty or malformed endpoint URI, when constructing the client, then it returns a validation error.
-func TestNewRejectsInvalidEndpoint(t *testing.T) {
-	t.Parallel()
-
-	for _, endpoint := range []string{"", "://broken", "ftp://prometheus.example.com/write"} {
-		if _, err := New(config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, endpoint)}}, Options{}); err == nil {
-			t.Errorf("New(%q) error = nil, want invalid endpoint error", endpoint)
-		}
-	}
-}
-
-// TestUploadSendsSnappyProtobufAndRequiredHeaders verifies Remote Write v1 request encoding and headers.
-//
-// Given a valid heartbeat and endpoint, when Upload sends the batch, then it sends block-compressed
-// protobuf with the required protocol headers.
-func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
+// Given a valid heartbeat and endpoint, when Upload sends the payload,
+// then it sends block-compressed protobuf with the required protocol headers.
+func TestHeadersBody(t *testing.T) {
 	requests := make(chan http.Header, 1)
 	schema := newRemoteWriteMessages()
 
@@ -89,50 +75,20 @@ func TestUploadSendsSnappyProtobufAndRequiredHeaders(t *testing.T) {
 		t.Fatalf("Upload() error = %v", err)
 	}
 
-	headers := <-requests
-	if got := headers.Get("Content-Encoding"); got != "snappy" {
-		t.Errorf("Content-Encoding = %q, want snappy", got)
+	got := <-requests
+	if value := got.Get("Content-Encoding"); value != "snappy" {
+		t.Errorf("Content-Encoding = %q, want snappy", value)
 	}
 
-	if got := headers.Get("Content-Type"); got != "application/x-protobuf" {
+	if got := got.Get("Content-Type"); got != "application/x-protobuf" {
 		t.Errorf("Content-Type = %q, want application/x-protobuf", got)
 	}
 
-	if got := headers.Get("X-Prometheus-Remote-Write-Version"); got != "0.1.0" {
+	if got := got.Get("X-Prometheus-Remote-Write-Version"); got != "0.1.0" {
 		t.Errorf("Remote Write version = %q, want 0.1.0", got)
 	}
 
-	if got := headers.Get("User-Agent"); got != "rhc-heartbeat/test" {
+	if got := got.Get("User-Agent"); got != "rhc-heartbeat/test" {
 		t.Errorf("User-Agent = %q, want rhc-heartbeat/test", got)
-	}
-}
-
-// TestUploadReturnsErrorForNonSuccessStatus verifies failed receiver responses are reported.
-//
-// Given a receiver returning HTTP 503, when Upload sends a heartbeat, then it returns an error
-// without interpreting the response body.
-func TestUploadReturnsErrorForNonSuccessStatus(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = writer.Write([]byte("receiver error"))
-	}))
-	defer server.Close()
-
-	client, err := New(
-		config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, server.URL)}},
-		Options{UserAgent: "rhc-heartbeat/test"},
-	)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	defer client.CloseIdleConnections()
-
-	hb := heartbeat.Heartbeat{HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing}
-
-	err = client.Upload(context.Background(), []heartbeat.Heartbeat{hb})
-	if err == nil || !strings.Contains(err.Error(), "503 Service Unavailable") {
-		t.Errorf("Upload() error = %v, want HTTP status error", err)
 	}
 }

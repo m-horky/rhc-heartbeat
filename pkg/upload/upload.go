@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	internalremotewrite "github.com/m-horky/rhc-heartbeat/internal/remotewrite"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
@@ -14,21 +15,18 @@ import (
 
 // Client uploads heartbeat batches using the resolved application defaults.
 type Client struct {
-	implementation *internalremotewrite.Client
+	impl *internalremotewrite.Client
 }
 
 // New constructs a Remote Write client using configuration and certificate path overrides.
 func New(cfg config.Config) (*Client, error) {
 	options := internalremotewrite.Options{
-		ClientCertificatePath: constants.PathFromEnv(
-			constants.ClientCertificatePathEnv,
-			constants.DefaultClientCertificatePath,
-		),
-		ClientKeyPath: constants.PathFromEnv(
-			constants.ClientKeyPathEnv,
-			constants.DefaultClientKeyPath,
-		),
-		UserAgent: "rhc-heartbeat/" + version.Version,
+		Filesystem:         fs.Filesystem{},
+		CACertificatePath:  cfg.Heartbeat.CAPath,
+		CertificatePath:    constants.Path(constants.IdentityCertPath),
+		CertificateKeyPath: constants.Path(constants.IdentityKeyPath),
+		UserAgent:          "rhc-heartbeat/" + version.Version,
+		Insecure:           !cfg.Heartbeat.TLSVerify,
 	}
 
 	implementation, err := internalremotewrite.New(cfg, options)
@@ -36,16 +34,16 @@ func New(cfg config.Config) (*Client, error) {
 		return nil, fmt.Errorf("create Remote Write client: %w", err)
 	}
 
-	return &Client{implementation: implementation}, nil
+	return &Client{impl: implementation}, nil
 }
 
 // Upload sends the supplied heartbeats as one Remote Write request.
 func (client *Client) Upload(ctx context.Context, heartbeats []heartbeat.Heartbeat) error {
-	if client == nil || client.implementation == nil {
+	if client == nil || client.impl == nil {
 		return errors.New("upload heartbeats: missing client")
 	}
 
-	if err := client.implementation.Upload(ctx, heartbeats); err != nil {
+	if err := client.impl.Upload(ctx, heartbeats); err != nil {
 		return fmt.Errorf("upload heartbeat batch: %w", err)
 	}
 
@@ -54,7 +52,7 @@ func (client *Client) Upload(ctx context.Context, heartbeats []heartbeat.Heartbe
 
 // CloseIdleConnections closes idle connections held by the underlying HTTP transport.
 func (client *Client) CloseIdleConnections() {
-	if client != nil && client.implementation != nil {
-		client.implementation.CloseIdleConnections()
+	if client != nil && client.impl != nil {
+		client.impl.CloseIdleConnections()
 	}
 }

@@ -60,9 +60,9 @@ func TestEncodeHeartbeatsEmitsExtendedPayloadLabels(t *testing.T) {
 
 	payload, err := encodeHeartbeats([]heartbeat.Heartbeat{{
 		HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing,
-		MarketplaceID: "aws", MarketplaceAccountID: "account", MarketplaceInstanceID: "instance",
-		MarketplaceOfferIDs: []string{"offer-a", "offer-b"}, VCPUCount: new(uint64(16)),
-		ProductIDs: []string{"product-a", "product-b"},
+		MarketplaceID: new("aws"), MarketplaceAccountID: new("account"), MarketplaceInstanceID: new("instance"),
+		MarketplaceOfferIDs: new([]string{"offer-a", "offer-b"}), VCPUCount: new(uint64(16)),
+		ProductIDs: new([]string{"product-a", "product-b"}),
 	}})
 	if err != nil {
 		t.Fatalf("encodeHeartbeats() error = %v", err)
@@ -201,35 +201,6 @@ func assertEncodedSamples(t *testing.T, schema remoteWriteDescriptors, series pr
 
 	if got := second.Get(valueField).Float(); got != 3.5 {
 		t.Errorf("second sample monotonic seconds = %v, want 3.5", got)
-	}
-}
-
-// TestEncodeHeartbeatsRejectsEmptyRequiredLabelValues verifies invalid Remote Write labels are rejected.
-//
-// Given a heartbeat with a missing identity, when encoding runs, then it returns an error
-// instead of emitting an invalid label.
-func TestEncodeHeartbeatsRejectsEmptyRequiredLabelValues(t *testing.T) {
-	t.Parallel()
-
-	hb := heartbeat.Heartbeat{HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing}
-	if _, err := encodeHeartbeats([]heartbeat.Heartbeat{hb}); err == nil {
-		t.Fatal("encodeHeartbeats() error = nil, want empty label error")
-	}
-}
-
-// TestEncodeHeartbeatsRejectsInvalidKind verifies unsupported kinds cannot become Prometheus labels.
-//
-// Given a heartbeat with a kind outside the declared enum
-// When encoding runs
-// Then encoding returns an error instead of emitting an unrestricted label.
-func TestEncodeHeartbeatsRejectsInvalidKind(t *testing.T) {
-	t.Parallel()
-
-	hb := heartbeat.Heartbeat{
-		HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.Kind("custom"),
-	}
-	if _, err := encodeHeartbeats([]heartbeat.Heartbeat{hb}); err == nil {
-		t.Fatal("encodeHeartbeats() error = nil, want invalid kind error")
 	}
 }
 

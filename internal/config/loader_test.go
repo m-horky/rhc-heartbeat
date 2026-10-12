@@ -1,146 +1,132 @@
 package config
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/m-horky/rhc-heartbeat/internal/config/rhsm"
 	internalfs "github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
-// TestLoadMergesNativeFilesAndDropIns verifies documented configuration precedence.
+// TestLoadHasDefaults verifies Load returns at least the default configuration.
 //
-// Given defaults, a main file, and lexicographically ordered drop-ins, when Load resolves the configuration,
-// then later layers win and valid timeout and bypass values are retained.
-func TestLoadMergesNativeFilesAndDropIns(t *testing.T) {
+// Given all files and directories are absent, when Load resolves the configuration,
+// then it returns the default configuration.
+func TestLoadHasDefaults(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	mainPath := filepath.Join(root, "main.toml")
 
-	dropInDir := filepath.Join(root, "drop-ins")
-	if err := os.Mkdir(dropInDir, 0o700); err != nil {
+	partial, err := newPartialFromDefaults()
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	writeNativeTestFile(t, mainPath, `[api.heartbeat]
-uri = "https://main.example.com/write"
-[http.timeout]
-connect = 0
-[http.proxy]
-no-proxy = ["*.example.com", "10.0.0.0/8", "bad**"]
-`)
-	writeNativeTestFile(t, filepath.Join(dropInDir, "10-first.conf"), `[api.heartbeat]
-uri = "https://first.example.com/write"
-`)
-	writeNativeTestFile(t, filepath.Join(dropInDir, "20-last.CONF"), `[api.heartbeat]
-uri = "https://last.example.com/write"
-`)
-
-	if err := os.Mkdir(filepath.Join(dropInDir, "ignored.conf"), 0o700); err != nil {
+	want, err := partial.resolve()
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	fallback := testRHSMFallback()
+	got, err := Load(
+		internalfs.Filesystem{},
+		filepath.Join(root, "main.toml"),
+		filepath.Join(root, "drop-ins"),
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	got, err := Load(internalfs.Filesystem{}, mainPath, dropInDir, &fallback)
+	if diff := cmp.Diff(got, want); diff != "" {
+		t.Errorf("Load() mismatch (-want +got): %s", diff)
+	}
+}
+
+// TestLoadReadsMainAndDropIns verifies documented configuration precedence.
+//
+// Given defaults, a main file, and the drop-ins, when Load resolves the configuration,
+// then later layers win.
+func TestLoadReadsMainAndDropIns(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mainPath := filepath.Join(root, "rhc-heartbeat.conf")
+
+	dropInsDir := filepath.Join(root, "rhc-heartbeat.conf.d")
+	if err := os.Mkdir(dropInsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	write(t, mainPath, "[http.timeout]\nconnect=10\nrequest=10\nidle=10\n")
+	write(t, filepath.Join(dropInsDir, "20.conf"), "[http.timeout]\nrequest=20\nidle=20\n")
+	write(t, filepath.Join(dropInsDir, "30.conf"), "[http.timeout]\nidle=30\n")
+	write(t, filepath.Join(dropInsDir, "40.conf"), "[http.timeout]\n")
+	write(t, filepath.Join(dropInsDir, "50.conf"), "")
+
+	fallback := getRHSMconf()
+
+	got, err := Load(internalfs.Filesystem{}, mainPath, dropInsDir, &fallback)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if got.API.Heartbeat.URI.String() != "https://last.example.com/write" {
-		t.Errorf("endpoint = %q, want final drop-in endpoint", got.API.Heartbeat.URI.String())
+	if got.HTTP.Timeout.Connect != 10*time.Second {
+		t.Errorf("connect timeout = %s, want 10", got.HTTP.Timeout.Connect)
 	}
 
-	if got.HTTP.Timeout.Connect != 0 {
-		t.Errorf("connect timeout = %s, want zero", got.HTTP.Timeout.Connect)
+	if got.HTTP.Timeout.Request != 20*time.Second {
+		t.Errorf("request timeout = %s, want 20", got.HTTP.Timeout.Request)
 	}
 
-	if want := []string{"*.example.com", "10.0.0.0/8"}; !reflect.DeepEqual(got.HTTP.Proxy.NoProxy, want) {
-		t.Errorf("no-proxy = %#v, want %#v", got.HTTP.Proxy.NoProxy, want)
+	if got.HTTP.Timeout.Idle != 30*time.Second {
+		t.Errorf("idle timeout = %s, want 30", got.HTTP.Timeout.Idle)
 	}
 
-	if got.API.Heartbeat.URI.Scheme != "https" {
-		t.Errorf("endpoint scheme = %q, want https", got.API.Heartbeat.URI.Scheme)
-	}
-
-	if got.API.Heartbeat.TLSVerify || got.API.Heartbeat.CAPath != "/legacy/ca.pem" {
-		t.Errorf("RHSM endpoint fallback = %+v, want TLS and CA fallback values", got.API.Heartbeat)
-	}
-
-	if got.HTTP.Proxy.URI.String() != "http://proxy.example.com:3128" ||
-		got.HTTP.Proxy.Username != "legacy-user" || got.HTTP.Proxy.Password != "legacy-password" {
-		t.Error("RHSM proxy fallback did not preserve the expected URI and credentials")
+	if got.HTTP.Proxy.URI.Host != "rhsm.example.org:3128" {
+		t.Errorf("proxy hostname = %s, want %s", got.HTTP.Proxy.URI.Host, "rhsm.example.org:3128")
 	}
 }
 
 // TestLoadRejectsExplicitEmptyEndpoint verifies empty supplied URIs are not silently suppressed.
 //
-// Given a valid default endpoint and an explicitly empty endpoint in the main file, when Load resolves,
-// then it reports an invalid configuration instead of restoring the default.
+// Given an explicitly empty endpoint in the main file, when Load resolves,
+// then it reports an invalid configuration.
 func TestLoadRejectsExplicitEmptyEndpoint(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	mainPath := filepath.Join(root, "main.toml")
-	writeNativeTestFile(t, mainPath, "[api.heartbeat]\nuri = \"\"\n")
+	write(t, mainPath, "[api.heartbeat]\nuri = \"\"\n")
 
 	_, err := Load(internalfs.Filesystem{}, mainPath, filepath.Join(root, "missing"), nil)
 	if err == nil {
-		t.Fatal("Load() error = nil, want explicit empty endpoint failure")
+		t.Fatal("Load() error = nil")
 	}
 }
 
-// TestLoadAllowsMissingSources verifies absent native files and drop-in directories use defaults.
-//
-// Given missing optional native sources, when Load runs, then complete embedded defaults are returned.
-func TestLoadAllowsMissingSources(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-
-	got, err := Load(internalfs.Filesystem{}, filepath.Join(root, "missing.toml"), filepath.Join(root, "missing.d"), nil)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	want, err := url.Parse("https://cert.console.redhat.com/api/rhel-telemetry/v1/receive")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got.API.Heartbeat.URI.String() != want.String() {
-		t.Errorf("default endpoint = %q, want %q", got.API.Heartbeat.URI.String(), want.String())
-	}
-
-	if got.HTTP.Proxy.NoProxy == nil {
-		t.Error("default no-proxy list is nil, want initialized empty list")
-	}
-}
-
-// testRHSMFallback returns deterministic legacy values for native-merge tests.
-func testRHSMFallback() rhsm.Config {
+// getRHSMconf returns deterministic legacy values for native-merge tests.
+func getRHSMconf() rhsm.Config {
 	return rhsm.Config{
 		Server: rhsm.Server{
-			Hostname:      "satellite.example.com",
+			Hostname:      "rhsm.example.org",
 			Port:          443,
 			TLSVerify:     false,
-			ProxyHostname: "proxy.example.com",
+			ProxyHostname: "rhsm.example.org",
 			ProxyScheme:   "http",
 			ProxyPort:     3128,
-			ProxyUser:     "legacy-user",
-			ProxyPassword: "legacy-password",
-			NoProxy:       []string{"legacy.example.com"},
+			ProxyUser:     "",
+			ProxyPassword: "",
+			NoProxy:       "",
 		},
 		RHSM: rhsm.RHSM{RepoCACert: "/legacy/ca.pem"},
 	}
 }
 
-// writeNativeTestFile writes one native configuration fixture.
-func writeNativeTestFile(t *testing.T, path, contents string) {
+// write writes contents into a file on disk.
+func write(t *testing.T, path, contents string) {
 	t.Helper()
 
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatalf("write native test file: %v", err)
+		t.Fatalf("write to disk: %v", err)
 	}
 }

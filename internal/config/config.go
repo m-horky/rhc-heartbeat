@@ -26,22 +26,20 @@ type Timeout struct {
 	Idle    time.Duration
 }
 
-// Proxy contains a proxy URL, credentials, and bypass rules. NoProxy rules match
-// hostnames and their subdomains on DNS label boundaries, IP literals, CIDRs,
-// optional ports, and the whole-entry wildcard; a leading *. aliases its hostname.
+// Proxy contains a proxy URL, credentials, and bypass rules.
 type Proxy struct {
 	URI      url.URL
 	Username string
 	Password string
-	NoProxy  []string
+	NoProxy  string
 }
 
-// API contains resolved API endpoints.
+// API contains remote endpoints.
 type API struct {
 	Heartbeat Endpoint
 }
 
-// Endpoint contains a resolved endpoint URL and TLS settings.
+// Endpoint contains an endpoint URL and TLS settings.
 type Endpoint struct {
 	URI       url.URL
 	TLSVerify bool
@@ -49,14 +47,7 @@ type Endpoint struct {
 }
 
 // resolve converts merged native settings into complete resolved sections.
-func (partial dtoConfig) resolve() (Config, error) {
-	if partial.HTTP.Timeout.Connect == nil || partial.HTTP.Timeout.Request == nil || partial.HTTP.Timeout.Idle == nil ||
-		partial.HTTP.Proxy.URI == nil || partial.HTTP.Proxy.Username == nil || partial.HTTP.Proxy.Password == nil ||
-		partial.HTTP.Proxy.NoProxy == nil || partial.API.Heartbeat.URI == nil ||
-		partial.API.Heartbeat.TLSVerify == nil || partial.API.Heartbeat.CAPath == nil {
-		return Config{}, errors.New("native configuration is incomplete")
-	}
-
+func (partial *dtoConfig) resolve() (Config, error) {
 	endpoint, err := resolveEndpoint(partial.API.Heartbeat)
 	if err != nil {
 		return Config{}, err
@@ -86,37 +77,36 @@ func resolveEndpoint(partial dtoEndpoint) (Endpoint, error) {
 		return Endpoint{}, errors.New("resolve api.heartbeat: required setting is empty or missing")
 	}
 
-	parsed, err := parseHTTPURL(*partial.URI)
+	err := isValidURI(*partial.URI)
 	if err != nil {
 		return Endpoint{}, fmt.Errorf("resolve api.heartbeat.uri: %w", err)
 	}
 
-	return Endpoint{URI: *parsed, TLSVerify: *partial.TLSVerify, CAPath: *partial.CAPath}, nil
+	uri, err := url.Parse(*partial.URI)
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("resolve api.heartbeat.uri: %w", err)
+	}
+
+	return Endpoint{URI: *uri, TLSVerify: *partial.TLSVerify, CAPath: *partial.CAPath}, nil
 }
 
 // resolveProxy parses the configured proxy URI and resolves optional credentials and bypass rules.
 func resolveProxy(partial dtoProxy) (Proxy, error) {
-	if partial.URI == nil || partial.Username == nil || partial.Password == nil || partial.NoProxy == nil {
-		return Proxy{}, errors.New("resolve http.proxy: required setting is missing")
+	if partial.URI == nil || *partial.URI == "" {
+		return Proxy{}, nil
 	}
 
-	var uri url.URL
+	if err := isValidURI(*partial.URI); err != nil {
+		return Proxy{}, fmt.Errorf("resolve http.proxy.uri: %w", err)
+	}
 
-	if *partial.URI != "" {
-		parsed, err := parseHTTPURL(*partial.URI)
-		if err != nil {
-			return Proxy{}, fmt.Errorf("resolve http.proxy.uri: %w", err)
-		}
-
-		uri = *parsed
-	} else if *partial.Username != "" || *partial.Password != "" {
-		return Proxy{}, errors.New("resolve http.proxy: credentials require a proxy URI")
+	uri, err := url.Parse(*partial.URI)
+	if err != nil {
+		return Proxy{}, fmt.Errorf("resolve http.proxy.uri: %w", err)
 	}
 
 	return Proxy{
-		URI:      uri,
-		Username: *partial.Username,
-		Password: *partial.Password,
-		NoProxy:  append([]string{}, (*partial.NoProxy)...),
+		URI:     *uri,
+		NoProxy: *partial.NoProxy,
 	}, nil
 }

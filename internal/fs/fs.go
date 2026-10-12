@@ -1,5 +1,3 @@
-//go:build linux
-
 package fs
 
 import (
@@ -28,8 +26,7 @@ type File interface {
 	Close() error
 }
 
-// FS is the filesystem contract used by loaders. Read validates that the
-// resolved target is a regular file.
+// FS is the filesystem contract used by loaders.
 type FS interface {
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]os.DirEntry, error)
@@ -37,10 +34,9 @@ type FS interface {
 	Open(path string) (File, error)
 }
 
-// WriteFS extends FS with append and atomic replacement operations.
+// WriteFS extends FS atomic content replacement.
 type WriteFS interface {
 	FS
-	Append(path string, data []byte, perm os.FileMode) error
 	Replace(path string, data []byte, perm os.FileMode) error
 }
 
@@ -60,8 +56,12 @@ func (Filesystem) Open(path string) (File, error) {
 	return osFile{file}, nil
 }
 
-// Read opens path, verifies that its resolved target is a regular file, and
-// reads its contents.
+// TODO Should Read natively support limiting the amount of bytes it is allowed to read?
+//  AI-driven security audits frequently highlight us reading some file in full, should
+//  we solve it at a single place, here?
+
+// Read opens a path and reads its contents.
+// Error is returned if the file cannot be read or is not regular.
 func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	file, err := filesystem.Open(path)
 	if err != nil {
@@ -95,48 +95,7 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	return data, nil
 }
 
-// Append opens path, appends data, and syncs both the file and its containing directory.
-func (Filesystem) Append(path string, data []byte, perm os.FileMode) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, perm.Perm())
-	if err != nil {
-		return &os.PathError{Op: "append", Path: path, Err: err}
-	}
-
-	info, err := file.Stat()
-	if err == nil && !info.Mode().IsRegular() {
-		err = syscall.EINVAL
-	}
-
-	if err == nil {
-		err = file.Chmod(perm.Perm())
-	}
-
-	if err == nil {
-		err = writeAll(file, data)
-	}
-
-	if err == nil {
-		err = file.Sync()
-	}
-
-	closeErr := file.Close()
-
-	if err != nil {
-		return &os.PathError{Op: "append", Path: path, Err: err}
-	}
-
-	if closeErr != nil {
-		return &os.PathError{Op: "close", Path: path, Err: closeErr}
-	}
-
-	if err := syncDirectory(filepath.Dir(path)); err != nil {
-		return &os.PathError{Op: "sync directory", Path: filepath.Dir(path), Err: err}
-	}
-
-	return nil
-}
-
-// Replace atomically writes data at path.
+// Replace atomically writes data at a path.
 func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
 	directory := filepath.Dir(path)
 
@@ -156,7 +115,7 @@ func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
 		}
 	}()
 
-	if err := writeAll(file, data); err != nil {
+	if _, err := file.Write(data); err != nil {
 		return &os.PathError{Op: "replace", Path: path, Err: err}
 	}
 
@@ -177,49 +136,6 @@ func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
 	}
 
 	removeTemp = false
-
-	if err := syncDirectory(directory); err != nil {
-		return &os.PathError{Op: "sync directory", Path: directory, Err: err}
-	}
-
-	return nil
-}
-
-// syncDirectory syncs directory metadata after a filesystem update.
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open directory: %w", err)
-	}
-
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-
-	if syncErr != nil {
-		return fmt.Errorf("sync directory: %w", syncErr)
-	}
-
-	if closeErr != nil {
-		return fmt.Errorf("close directory: %w", closeErr)
-	}
-
-	return nil
-}
-
-// writeAll writes all data to writer or returns the first write error.
-func writeAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if err != nil {
-			return fmt.Errorf("write data: %w", err)
-		}
-
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-
-		data = data[written:]
-	}
 
 	return nil
 }
@@ -255,8 +171,7 @@ func metadata(info os.FileInfo) FileInfo {
 	return m
 }
 
-// ReadDir returns the entries in path in the same sorted order as
-// os.ReadDir.
+// ReadDir returns all entries under a directory.
 func (Filesystem) ReadDir(path string) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -266,7 +181,7 @@ func (Filesystem) ReadDir(path string) ([]os.DirEntry, error) {
 	return entries, nil
 }
 
-// Stat returns metadata for the resolved target of path.
+// Stat returns metadata for the resolved path.
 func (Filesystem) Stat(path string) (FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,33 +14,54 @@ import (
 )
 
 // Load merges defaults, optional RHSM settings, the main file, and drop-ins.
-func Load(filesystem internalfs.FS, path, dropInDir string, fallback *rhsm.Config) (Config, error) {
-	defaultDTO, err := defaults()
+func Load(filesystem internalfs.FS, path, dropInDir string, rhsmFallback *rhsm.Config) (Config, error) {
+	partial, err := newPartialFromDefaults()
 	if err != nil {
-		return Config{}, fmt.Errorf("decode embedded native defaults: %w", err)
+		return Config{}, fmt.Errorf("cannot read default configuration: %w", err)
 	}
 
-	var partial dtoConfig
-	partial.update(defaultDTO, "embedded defaults")
+	// merge rhsm.conf, if present
+	if rhsmFallback != nil {
+		rhsmPartial, err := newPartialFromRHSM(*rhsmFallback)
+		if err != nil {
+			return Config{}, fmt.Errorf("cannot convert RHSM configuration: %w", err)
+		}
 
-	if _, err := partial.resolve(); err != nil {
-		return Config{}, fmt.Errorf("invalid embedded native defaults: %w", err)
-	}
-
-	if fallback != nil {
-		if err := applyFallback(&partial, *fallback); err != nil {
-			return Config{}, err
+		if err := partial.update(&rhsmPartial); err != nil {
+			return Config{}, fmt.Errorf("cannot merge RHSM configuration: %w", err)
 		}
 	}
 
-	if err := applyMainFile(filesystem, &partial, path); err != nil {
+	// merge main file
+	{
+		mainPartial, err := newPartialFromFile(filesystem, path)
+		if err != nil {
+			return Config{}, fmt.Errorf("cannot parse main configuration: %w", err)
+		}
+
+		if err := partial.update(mainPartial); err != nil {
+			return Config{}, fmt.Errorf("cannot merge main configuration: %w", err)
+		}
+	}
+
+	// merge drop-in files
+	dropIns, err := discoverDropIns(filesystem, dropInDir)
+	if err != nil {
 		return Config{}, err
 	}
 
-	if err := applyDropIns(filesystem, &partial, dropInDir); err != nil {
-		return Config{}, err
+	for _, dropin := range dropIns {
+		dropinPartial, err := newPartialFromFile(filesystem, dropin)
+		if err != nil {
+			return Config{}, fmt.Errorf("drop-in configuration %s: %w", dropin, err)
+		}
+
+		if err := partial.update(dropinPartial); err != nil {
+			return Config{}, fmt.Errorf("merge drop-in configuration %s: %w", dropin, err)
+		}
 	}
 
+	// resolve and validate
 	resolved, err := partial.resolve()
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve native configuration: %w", err)
@@ -50,109 +70,57 @@ func Load(filesystem internalfs.FS, path, dropInDir string, fallback *rhsm.Confi
 	return resolved, nil
 }
 
-// applyFallback converts and merges resolved RHSM values over native defaults.
-func applyFallback(partial *dtoConfig, fallback rhsm.Config) error {
-	converted, err := fromRHSM(fallback)
-	if err != nil {
-		return fmt.Errorf("convert RHSM configuration: %w", err)
-	}
-
-	partial.update(converted, "RHSM fallback")
-
-	return nil
-}
-
-// applyMainFile reads and merges the optional main native configuration document.
-func applyMainFile(filesystem internalfs.FS, partial *dtoConfig, path string) error {
-	data, err := filesystem.Read(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-
-		return fmt.Errorf("read native configuration %s: %w", path, err)
-	}
-
-	next, err := parse(data)
-	if err != nil {
-		return fmt.Errorf("parse native configuration %s: %w", path, err)
-	}
-
-	partial.update(next, path)
-
-	return nil
-}
-
-// applyDropIns discovers, sorts, and merges native configuration drop-ins.
-func applyDropIns(filesystem internalfs.FS, partial *dtoConfig, directory string) error {
+// discoverDropIns finds paths of drop-ins.
+func discoverDropIns(filesystem internalfs.FS, directory string) ([]string, error) {
 	entries, err := filesystem.ReadDir(directory)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return []string{}, nil
+	}
 
-		return fmt.Errorf("discover configuration drop-ins %s: %w", directory, err)
+	if err != nil {
+		return nil, fmt.Errorf("cannot discover drop-in files: %w", err)
 	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
+	var result []string
+
 	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".conf") {
+		entryPath := filepath.Join(directory, entry.Name())
+		if !strings.HasSuffix(strings.ToLower(entryPath), ".conf") {
 			continue
 		}
 
-		if err := applyDropIn(filesystem, partial, filepath.Join(directory, name)); err != nil {
-			return err
-		}
+		result = append(result, entryPath)
 	}
 
-	return nil
+	return result, nil
 }
 
-// applyDropIn reads and merges one regular drop-in file.
-func applyDropIn(filesystem internalfs.FS, partial *dtoConfig, path string) error {
-	info, err := filesystem.Stat(path)
+// newPartialFromFile reads a file and decodes its content into a partial native configuration.
+func newPartialFromFile(filesystem internalfs.FS, path string) (*dtoConfig, error) {
+	raw, err := filesystem.Read(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			slog.Debug("configuration drop-in disappeared", "source", path)
-
-			return nil
+			return &dtoConfig{}, nil
 		}
 
-		return fmt.Errorf("inspect configuration drop-in %s: %w", path, err)
+		return nil, fmt.Errorf("read configuration file %s: %w", path, err)
 	}
 
-	if info.IsDir || !info.IsRegular {
-		return nil
-	}
-
-	data, err := filesystem.Read(path)
+	parsed, err := newPartialFromTOML(raw)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			slog.Debug("configuration drop-in disappeared", "source", path)
-
-			return nil
-		}
-
-		return fmt.Errorf("read configuration drop-in %s: %w", path, err)
+		return nil, fmt.Errorf("parse configuration file %s: %w", path, err)
 	}
 
-	next, err := parse(data)
-	if err != nil {
-		return fmt.Errorf("parse configuration drop-in %s: %w", path, err)
-	}
-
-	partial.update(next, path)
-
-	return nil
+	return parsed, nil
 }
 
-// parse decodes a TOML document into a partial native configuration.
-func parse(data []byte) (dtoConfig, error) {
-	var result dtoConfig
+// newPartialFromTOML decodes a TOML document into a partial native configuration.
+func newPartialFromTOML(data []byte) (*dtoConfig, error) {
+	var result *dtoConfig
 	if _, err := toml.Decode(string(data), &result); err != nil {
-		return dtoConfig{}, errors.New("invalid TOML syntax or value type")
+		return nil, errors.New("invalid TOML syntax or value type")
 	}
 
 	return result, nil

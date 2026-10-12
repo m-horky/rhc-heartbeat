@@ -7,23 +7,17 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Reading contains the unconverted timespec values for the system clocks.
+// Reading contains time values for the system clocks.
 type Reading struct {
 	TimeMonotonic unix.Timespec
-	TimeBoottime  unix.Timespec
-	Time          unix.Timespec
+	TimeUnix      unix.Timespec
 }
 
-// Read returns CLOCK_MONOTONIC, CLOCK_BOOTTIME, and CLOCK_REALTIME as unix.Timespec values.
+// Read returns CLOCK_MONOTONIC and CLOCK_REALTIME as unix.Timespec values.
 func Read() (Reading, error) {
 	var monotonic unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &monotonic); err != nil {
 		return Reading{}, fmt.Errorf("read CLOCK_MONOTONIC: %w", err)
-	}
-
-	var boottime unix.Timespec
-	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &boottime); err != nil {
-		return Reading{}, fmt.Errorf("read CLOCK_BOOTTIME: %w", err)
 	}
 
 	var realtime unix.Timespec
@@ -33,7 +27,6 @@ func Read() (Reading, error) {
 
 	return Reading{
 		TimeMonotonic: monotonic,
-		TimeBoottime:  boottime,
-		Time:          realtime,
+		TimeUnix:      realtime,
 	}, nil
 }

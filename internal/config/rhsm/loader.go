@@ -10,50 +10,50 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// Load merges embedded defaults with the RHSM file and resolves the result.
+// Load merges the rhsm.conf defaults with /etc/rhsm/rhsm.conf.
 func Load(filesystem internalfs.FS, path string) (Config, error) {
-	defaultDTO, err := defaults()
+	partial, err := newPartialFromDefaults()
 	if err != nil {
-		return Config{}, fmt.Errorf("decode embedded RHSM defaults: %w", err)
+		return Config{}, fmt.Errorf("read default rhsm.conf: %w", err)
 	}
 
-	var partial dtoConfig
-	partial.update(defaultDTO, "embedded defaults")
-
-	if _, err := partial.resolve(); err != nil {
-		return Config{}, fmt.Errorf("invalid embedded RHSM defaults: %w", err)
-	}
-
+	// merge rhsm.conf
 	raw, err := filesystem.Read(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return Config{}, fmt.Errorf("read RHSM configuration %s: %w", path, err)
+			return Config{}, fmt.Errorf("read rhsm.conf %s: %w", path, err)
 		}
 	} else {
-		parsed, parseErr := parse(raw)
+		parsed, parseErr := newPartialFromINI(raw)
 		if parseErr != nil {
-			return Config{}, fmt.Errorf("parse RHSM configuration %s: %w", path, parseErr)
+			return Config{}, fmt.Errorf("parse rhsm.conf %s: %w", path, parseErr)
 		}
 
-		partial.update(parsed, path)
+		if err := partial.update(parsed); err != nil {
+			return Config{}, fmt.Errorf("merge rhsm.conf %s: %w", path, err)
+		}
 	}
 
+	// resolve and validate
 	resolved, err := partial.resolve()
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve RHSM configuration %s: %w", path, err)
+		return Config{}, fmt.Errorf("resolve rhsm.conf %s: %w", path, err)
 	}
 
 	return resolved, nil
 }
 
-// parse decodes an INI document into optional RHSM configuration leaves.
-func parse(data []byte) (dtoConfig, error) {
+// newPartialFromINI decodes an INI document into configuration partial.
+func newPartialFromINI(data []byte) (*dtoConfig, error) {
 	file, err := ini.LoadSources(ini.LoadOptions{IgnoreInlineComment: true}, data)
 	if err != nil {
-		return dtoConfig{}, errors.New("invalid INI syntax")
+		return nil, errors.New("invalid INI syntax")
 	}
 
-	var result dtoConfig
+	result := &dtoConfig{
+		Server: dtoServer{},
+		RHSM:   dtoRHSM{},
+	}
 
 	for _, sectionName := range []string{"server", "rhsm"} {
 		section, sectionErr := file.GetSection(sectionName)
@@ -66,9 +66,15 @@ func parse(data []byte) (dtoConfig, error) {
 
 			name := strings.ToLower(key.Name())
 			if sectionName == "server" {
-				setServerValue(&result.Server, name, value)
+				err := setServerValue(&result.Server, name, value)
+				if err != nil {
+					return nil, fmt.Errorf("interpret value: %w", err)
+				}
 			} else {
-				setRHSMValue(&result.RHSM, name, value)
+				err := setRHSMValue(&result.RHSM, name, value)
+				if err != nil {
+					return nil, fmt.Errorf("interpret value: %w", err)
+				}
 			}
 		}
 	}
@@ -76,8 +82,8 @@ func parse(data []byte) (dtoConfig, error) {
 	return result, nil
 }
 
-// setServerValue records known server keys while ignoring unknown INI keys.
-func setServerValue(server *dtoServer, name, value string) {
+// setServerValue records known server keys.
+func setServerValue(server *dtoServer, name, value string) error {
 	switch name {
 	case "hostname":
 		server.Hostname = new(value)
@@ -86,7 +92,12 @@ func setServerValue(server *dtoServer, name, value string) {
 	case "port":
 		server.Port = new(value)
 	case "insecure":
-		server.Insecure = new(value)
+		parsed, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+
+		server.Insecure = new(parsed)
 	case "proxy_hostname":
 		server.ProxyHostname = new(value)
 	case "proxy_scheme":
@@ -100,14 +111,29 @@ func setServerValue(server *dtoServer, name, value string) {
 	case "no_proxy":
 		server.NoProxy = new(value)
 	}
+
+	return nil
 }
 
-// setRHSMValue records known CA keys while ignoring unknown INI keys.
-func setRHSMValue(section *dtoRHSM, name, value string) {
+// setRHSMValue records known certificate authority keys.
+func setRHSMValue(section *dtoRHSM, name, value string) error {
 	switch name {
 	case "ca_cert_dir":
 		section.CACertDir = new(value)
 	case "repo_ca_cert":
 		section.RepoCACert = new(value)
+	}
+
+	return nil
+}
+
+func parseBool(value string) (bool, error) {
+	switch strings.ToLower(value) {
+	case "true", "1":
+		return true, nil
+	case "false", "0":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid value: %s", value)
 	}
 }

@@ -1,8 +1,9 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
-	"sort"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -10,117 +11,125 @@ import (
 	"github.com/m-horky/rhc-heartbeat/internal/subman"
 )
 
+type marketplaceProfile struct {
+	ID       *string
+	Account  *string
+	Instance *string
+	Offers   *[]string
+}
+
+type cpuProfile struct {
+	VCPUCount *uint64
+}
+
 // Profile contains system profile and marketplace data.
 type Profile struct {
-	MarketplaceID         string
-	MarketplaceAccountID  string
-	MarketplaceInstanceID string
-	MarketplaceOfferIDs   []string
-	VCPUCount             *uint64
-}
-
-type provider struct {
-	id          string
-	instanceKey string
-	accountKey  string
-	offerKeys   []string
-}
-
-// providers returns cloud provider fact mappings in deterministic precedence order.
-func providers() []provider {
-	return []provider{
-		{
-			id:          "aws",
-			instanceKey: "aws_instance_id",
-			accountKey:  "aws_account_id",
-			offerKeys:   []string{"aws_billing_products", "aws_marketplace_product_codes"},
-		},
-		{
-			id:          "azure",
-			instanceKey: "azure_instance_id",
-			accountKey:  "azure_subscription_id",
-			offerKeys:   []string{"azure_offer"},
-		},
-		{
-			id:          "gcp",
-			instanceKey: "gcp_instance_id",
-			accountKey:  "gcp_project_number",
-			offerKeys:   []string{"gcp_license_codes"},
-		},
-	}
+	marketplaceProfile
+	cpuProfile
 }
 
 // Get reads subscription-manager facts and transforms them into a system profile.
 func Get() (Profile, error) {
-	facts, err := subman.Read(exec.OSRunner{})
+	facts, err := subman.GetFacts(exec.OSRunner{})
 	if err != nil {
 		return Profile{}, fmt.Errorf("read system profile facts: %w", err)
 	}
 
-	profile, err := extractFacts(facts)
+	profile := Profile{}
+
+	vCPU, err := newCPUProfile(facts)
 	if err != nil {
-		return Profile{}, fmt.Errorf("parse system profile facts: %w", err)
+		slog.Warn("cannot extract vCPU count", "err", err)
 	}
+
+	profile.VCPUCount = vCPU.VCPUCount
+
+	marketplace, err := newMarketplaceProfile(facts)
+	if err != nil {
+		slog.Debug("cannot extract marketplace profile", "err", err)
+	}
+
+	profile.ID = marketplace.ID
+	profile.Instance = marketplace.Instance
+	profile.Account = marketplace.Account
+	profile.Offers = marketplace.Offers
 
 	return profile, nil
 }
 
-// extractFacts derives system profile fields from subscription-manager facts.
-func extractFacts(facts map[string]string) (Profile, error) {
-	profile := Profile{}
-
-	rawCount := strings.TrimSpace(facts["lscpu.cpu(s)"])
-	if count, err := strconv.ParseUint(rawCount, 10, 64); err == nil && count > 0 {
-		profile.VCPUCount = &count
+// newCPUProfile reads logical CPU count from subscription-manager facts output.
+func newCPUProfile(facts map[string]string) (*cpuProfile, error) {
+	raw, ok := facts["lscpu.cpu(s)"]
+	if !ok {
+		return nil, errors.New("lscpu.cpu(s) absent")
 	}
 
-	for _, current := range providers() {
-		if !hasProviderFacts(facts, current) {
+	count, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse lscpu.cpu(s): %w", err)
+	}
+
+	return &cpuProfile{VCPUCount: &count}, nil
+}
+
+// newMarketplaceProfile derives system profile fields from subscription-manager facts.
+func newMarketplaceProfile(facts map[string]string) (*marketplaceProfile, error) {
+	profile := &marketplaceProfile{}
+
+	var (
+		id       string
+		instance string
+		account  string
+		offers   string
+	)
+
+	if _, ok := facts["aws_instance_id"]; ok {
+		id = "aws"
+		instance = facts["aws_instance_id"]
+		account = facts["aws_account_id"]
+		offers = facts["aws_billing_products"] + facts["aws_marketplace_product_codes"]
+	}
+
+	if _, ok := facts["azure_instance_id"]; ok {
+		id = "azure"
+		instance = facts["azure_instance_id"]
+		account = facts["azure_subscription_id"]
+		offers = facts["azure_offer"]
+	}
+
+	if _, ok := facts["gcp_instance_id"]; ok {
+		id = "gcp"
+		instance = facts["gcp_instance_id"]
+		account = facts["gcp_project_number"]
+		offers = facts["gcp_license_codes"]
+	}
+
+	// The concatenation above may have resulted in a string starting/ending with a comma.
+	var offersList []string
+
+	for offer := range strings.SplitSeq(offers, ",") {
+		if len(offer) == 0 {
 			continue
 		}
 
-		profile.MarketplaceID = current.id
-		profile.MarketplaceInstanceID = facts[current.instanceKey]
-		profile.MarketplaceAccountID = facts[current.accountKey]
-		profile.MarketplaceOfferIDs = collectOffers(facts, current.offerKeys)
+		offersList = append(offersList, offer)
+	}
 
-		break
+	if id != "" {
+		profile.ID = new(id)
+	}
+
+	if instance != "" {
+		profile.Instance = new(instance)
+	}
+
+	if account != "" {
+		profile.Account = new(account)
+	}
+
+	if len(offersList) > 0 {
+		profile.Offers = &offersList
 	}
 
 	return profile, nil
-}
-
-// hasProviderFacts reports whether any fact with the provider's prefix is present.
-func hasProviderFacts(facts map[string]string, current provider) bool {
-	prefix := current.id + "_"
-	for key := range facts {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// collectOffers combines comma-separated offer facts and removes duplicates.
-func collectOffers(facts map[string]string, keys []string) []string {
-	offerSet := make(map[string]struct{})
-
-	for _, key := range keys {
-		for offer := range strings.SplitSeq(facts[key], ",") {
-			offer = strings.TrimSpace(offer)
-			if offer != "" {
-				offerSet[offer] = struct{}{}
-			}
-		}
-	}
-
-	offers := make([]string, 0, len(offerSet))
-	for offer := range offerSet {
-		offers = append(offers, offer)
-	}
-
-	sort.Strings(offers)
-
-	return offers
 }

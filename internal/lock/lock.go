@@ -23,8 +23,8 @@ type Lock struct {
 	file *os.File
 }
 
-// Acquire obtains an exclusive lock on path, waiting until it is available or ctx is canceled.
-// It calls onWait once if another process holds the lock, using PID -1 when its PID is unavailable.
+// Acquire obtains an exclusive lock on a path, waiting until it is available or its context is canceled.
+// When another process holds the lock, onWait is called once, containing the holding process PID.
 func Acquire(ctx context.Context, path string, onWait func(pid int)) (*Lock, error) {
 	file, err := openLockFile(path)
 	if err != nil {
@@ -34,7 +34,7 @@ func Acquire(ctx context.Context, path string, onWait func(pid int)) (*Lock, err
 	ticker := time.NewTicker(retryInterval)
 	defer ticker.Stop()
 
-	reportedWait := false
+	onWaitCalled := false
 
 	for {
 		// Do not acquire the lock if the request was already canceled.
@@ -62,16 +62,15 @@ func Acquire(ctx context.Context, path string, onWait func(pid int)) (*Lock, err
 		}
 
 		if !busy {
-			// Retry immediately after an interrupt; only lock contention needs a delay.
 			continue
 		}
 
-		if !reportedWait {
+		if !onWaitCalled {
 			if onWait != nil {
 				onWait(readOwnerPID(file))
 			}
 
-			reportedWait = true
+			onWaitCalled = true
 		}
 
 		select {
@@ -83,6 +82,8 @@ func Acquire(ctx context.Context, path string, onWait func(pid int)) (*Lock, err
 		}
 	}
 }
+
+// FIXME Should we use filesystem.WriteFS here?
 
 // openLockFile opens the lock path and verifies it refers to a regular file.
 func openLockFile(path string) (*os.File, error) {
@@ -109,7 +110,7 @@ func openLockFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-// tryAcquire attempts to lock file without blocking and reports whether it is busy.
+// tryAcquire attempts to lock a file without blocking and reports whether it is busy.
 func tryAcquire(file *os.File) (bool, bool, error) {
 	err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 	if err == nil {

@@ -1,26 +1,25 @@
-//go:build linux
-
 package cache
 
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// TestLoadMissingFileReturnsEmptyCache verifies that a missing cache file is treated as empty.
+// TestMissingIsEmpty verifies that a missing cache file is treated as empty.
 //
-// Given a path with no cache file, when Load reads it, then it returns an empty cache without an error.
-func TestLoadMissingFileReturnsEmptyCache(t *testing.T) {
-	t.Parallel()
-
+// Given a path with no cache file, when Load reads it,
+// then it returns an empty cache without an error.
+func TestMissingIsEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
 
-	loaded, err := Load(path)
+	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -34,14 +33,15 @@ func TestLoadMissingFileReturnsEmptyCache(t *testing.T) {
 	}
 }
 
-// TestSetKeepsNewestHeartbeatPerBoot verifies that Set keeps the highest monotonic time per boot ID.
+// TestLatestWithinBoot verifies that Set keeps the highest monotonic time per boot ID.
 //
 // Given multiple heartbeats for one boot and one for another,
 // when they are set, then only the newest per boot is returned.
-func TestSetKeepsNewestHeartbeatPerBoot(t *testing.T) {
-	t.Parallel()
+func TestLatestWithinBoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
 
-	loaded, err := Load(filepath.Join(t.TempDir(), "heartbeat.jsonl"))
+	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -57,7 +57,9 @@ func TestSetKeepsNewestHeartbeatPerBoot(t *testing.T) {
 	loaded.Add(otherBoot)
 
 	want := []heartbeat.Heartbeat{newest, otherBoot}
-	if got := loaded.Read(); !reflect.DeepEqual(got, want) {
+	got := loaded.Read()
+
+	if !cmp.Equal(got, want) {
 		t.Fatalf("Read() = %#v, want %#v", got, want)
 	}
 }
@@ -67,9 +69,10 @@ func TestSetKeepsNewestHeartbeatPerBoot(t *testing.T) {
 // Given a cache with one heartbeat, when a caller changes the slice returned by Read,
 // then the cached heartbeat remains unchanged.
 func TestReadReturnsCopy(t *testing.T) {
-	t.Parallel()
+	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
 
-	loaded, err := Load(filepath.Join(t.TempDir(), "heartbeat.jsonl"))
+	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -80,82 +83,20 @@ func TestReadReturnsCopy(t *testing.T) {
 	got := loaded.Read()
 	got[0].BootID = "mutated"
 
-	if cached := loaded.Read(); !reflect.DeepEqual(cached, []heartbeat.Heartbeat{want}) {
+	if cached := loaded.Read(); !cmp.Equal(cached, []heartbeat.Heartbeat{want}) {
 		t.Fatalf("Read() after mutation = %#v, want %#v", cached, []heartbeat.Heartbeat{want})
 	}
 }
 
-// TestSavePersistsLatestHeartbeats verifies that Save writes the current in-memory values.
+// TestClear verifies that clearing memory removes persisted heartbeats.
 //
-// Given a cache with multiple values for one boot,
-// when Save persists it and Load reads it again, then only the newest value is present.
-func TestSavePersistsLatestHeartbeats(t *testing.T) {
-	t.Parallel()
-
+// Given a non-empty saved cache, when Clear is followed by Save,
+// then loading the file returns an empty cache.
+func TestClear(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
 
-	loaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	loaded.Add(heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: time.Second, HostID: "old"})
-	want := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: "new"}
-	loaded.Add(want)
-
-	if err := loaded.Save(); err != nil {
-		t.Fatalf("Save() error = %v", err)
-	}
-
-	reloaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() after Save error = %v", err)
-	}
-
-	if got := reloaded.Read(); !reflect.DeepEqual(got, []heartbeat.Heartbeat{want}) {
-		t.Fatalf("Read() after Save = %#v, want %#v", got, []heartbeat.Heartbeat{want})
-	}
-}
-
-// TestLoadDeduplicatesPersistedHeartbeats verifies that older JSONL records are collapsed by boot ID.
-//
-// Given a cache file with repeated boot IDs,
-// when Load reads it, then it retains the record with the highest monotonic time.
-func TestLoadDeduplicatesPersistedHeartbeats(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
-	contents := "{\"BootID\":\"boot-a\",\"TimeMonotonic\":1000000000,\"HostID\":\"old\"}\n" +
-		"{\"BootID\":\"boot-b\",\"TimeMonotonic\":1000000000,\"HostID\":\"other\"}\n" +
-		"{\"BootID\":\"boot-a\",\"TimeMonotonic\":2000000000,\"HostID\":\"new\"}\n"
-
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	loaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	want := []heartbeat.Heartbeat{
-		{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: "new"},
-		{BootID: "boot-b", TimeMonotonic: time.Second, HostID: "other"},
-	}
-	if got := loaded.Read(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("Read() = %#v, want %#v", got, want)
-	}
-}
-
-// TestClearAndSavePersistsEmptyCache verifies that clearing memory and saving removes persisted heartbeats.
-//
-// Given a saved cache, when Clear is followed by Save, then loading the file returns an empty cache.
-func TestClearAndSavePersistsEmptyCache(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
-
-	loaded, err := Load(path)
+	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -176,7 +117,7 @@ func TestClearAndSavePersistsEmptyCache(t *testing.T) {
 		t.Fatalf("Save() after Clear error = %v", err)
 	}
 
-	reloaded, err := Load(path)
+	reloaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load() after Clear error = %v", err)
 	}

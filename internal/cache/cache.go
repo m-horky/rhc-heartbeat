@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
@@ -16,15 +15,14 @@ import (
 
 const (
 	fileMode    = 0o640
-	maxLineSize = 1024
-	maxFileSize = 1024 * 1024
+	maxLineSize = 2048
+	maxFileSize = 2048 * 512
 )
 
 // Cache reads and writes pending heartbeat records at its injected path.
 type Cache struct {
 	filesystem fs.WriteFS
 	path       string
-	mu         sync.Mutex
 }
 
 // New constructs a cache backed by filesystem at path.
@@ -32,11 +30,10 @@ func New(filesystem fs.WriteFS, path string) *Cache {
 	return &Cache{filesystem: filesystem, path: path}
 }
 
-// ReadAll returns the cached heartbeats in file order. A missing cache is empty.
-func (cache *Cache) ReadAll() ([]heartbeat.Heartbeat, error) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
+// Read returns the cached heartbeats in file order. A missing file produces an empty slice.
+//
+// The read operation is capped at 2048 bytes per line and at 512 lines.
+func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
 	data, err := cache.readFile()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -70,43 +67,8 @@ func (cache *Cache) ReadAll() ([]heartbeat.Heartbeat, error) {
 	return heartbeats, nil
 }
 
-// Append adds one heartbeat as a JSON value followed by a newline.
-func (cache *Cache) Append(hb heartbeat.Heartbeat) error {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
-	data, err := json.Marshal(hb)
-	if err != nil {
-		return fmt.Errorf("encode heartbeat for cache: %w", err)
-	}
-
-	if len(data) > maxLineSize {
-		return fmt.Errorf("encode heartbeat for cache: line exceeds %d bytes", maxLineSize)
-	}
-
-	data = append(data, '\n')
-
-	current, err := cache.readFile()
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read heartbeat cache before append %s: %w", cache.path, err)
-	}
-
-	if len(current)+len(data) > maxFileSize {
-		return fmt.Errorf("append heartbeat cache %s: cache would exceed %d bytes", cache.path, maxFileSize)
-	}
-
-	if err := cache.filesystem.Append(cache.path, data, fileMode); err != nil {
-		return fmt.Errorf("append heartbeat cache %s: %w", cache.path, err)
-	}
-
-	return nil
-}
-
-// Rewrite atomically replaces the cache with the supplied heartbeat records.
-func (cache *Cache) Rewrite(heartbeats []heartbeat.Heartbeat) error {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-
+// Write replaces the cache contents with the supplied heartbeat records.
+func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 	var data bytes.Buffer
 
 	for _, hb := range heartbeats {

@@ -1,11 +1,9 @@
-// Package constants exposes the system paths and environment variable names used by rhc-heartbeat.
+// Package constants exposes the system paths and environment variable names
+// used by rhc-heartbeat that are not configurable from its configuration file.
 //
-// The default paths cover the application configuration, legacy RHSM configuration, pending-heartbeat
-// cache, process lock, and Remote Write client certificate and key. The corresponding path environment
-// variables are exported alongside their defaults where overrides are supported.
+// Usage of the environment variable overrides is strictly internal and for
+// development purposes only.
 //
-// PathFromEnv returns a non-empty environment override or the supplied default path:
-//
-//	path := constants.PathFromEnv(constants.PendingCachePathEnv, constants.DefaultPendingCachePath)
-//	_ = path
+//	config := constants.Path(constants.ConfigPath)
+//	lock := constants.Path(constants.LockPath)
 package constants

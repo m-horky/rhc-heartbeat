@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 
 	internalconfig "github.com/m-horky/rhc-heartbeat/internal/config"
 	"github.com/m-horky/rhc-heartbeat/internal/config/rhsm"
@@ -29,28 +28,16 @@ type Proxy = internalconfig.Proxy
 
 // Get loads heartbeat configuration from environment overrides or the system defaults.
 func Get() (Config, error) {
-	path := os.Getenv(constants.ConfigPathEnv)
-	if path == "" {
-		path = constants.DefaultConfigPath
-		slog.Debug("using default heartbeat configuration", "path", path)
-	} else {
-		slog.Debug("using configured heartbeat configuration", "path", path)
-	}
-
-	rhsmPath := os.Getenv(constants.RHSMPathEnv)
-	if rhsmPath == "" {
-		rhsmPath = constants.DefaultRHSMPath
-		slog.Debug("using default RHSM configuration", "path", rhsmPath)
-	} else {
-		slog.Debug("using configured RHSM configuration", "path", rhsmPath)
-	}
+	path := constants.Path(constants.ConfigPath)
+	dropInsDir := constants.Path(constants.ConfigDropInsDir)
+	rhsmPath := constants.Path(constants.RHSMConfigPath)
 
 	fallback, err := rhsm.Load(fs.Filesystem{}, rhsmPath)
 	if err != nil {
 		return Config{}, fmt.Errorf("load RHSM configuration: %w", err)
 	}
 
-	loaded, err := internalconfig.Load(fs.Filesystem{}, path, constants.DefaultDropInDir, &fallback)
+	loaded, err := internalconfig.Load(fs.Filesystem{}, path, dropInsDir, &fallback)
 	if err != nil {
 		return Config{}, fmt.Errorf("load heartbeat configuration: %w", err)
 	}

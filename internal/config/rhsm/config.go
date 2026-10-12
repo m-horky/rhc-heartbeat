@@ -1,10 +1,14 @@
 package rhsm
 
 import (
-	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 )
+
+// TODO Should we return parsed url.URL objects since it will have to be done anyway?
 
 // Config contains resolved RHSM configuration.
 type Config struct {
@@ -23,7 +27,7 @@ type Server struct {
 	ProxyPort     uint16
 	ProxyUser     string
 	ProxyPassword string
-	NoProxy       []string
+	NoProxy       string
 }
 
 // RHSM contains resolved CA settings.
@@ -35,38 +39,39 @@ type RHSM struct {
 // resolve converts merged RHSM values into complete resolved sections.
 func (partial dtoConfig) resolve() (Config, error) {
 	server := partial.Server
-	if server.Hostname == nil || server.Prefix == nil || server.Port == nil || server.Insecure == nil ||
-		server.ProxyHostname == nil || server.ProxyScheme == nil || server.ProxyPort == nil ||
-		server.ProxyUser == nil || server.ProxyPassword == nil || server.NoProxy == nil ||
-		partial.RHSM.CACertDir == nil || partial.RHSM.RepoCACert == nil {
-		return Config{}, errors.New("RHSM configuration is incomplete")
-	}
 
-	port, err := parseUint16(*server.Port)
+	candlepin, err := resolveURI("https", *server.Hostname, *server.Port, *server.Prefix)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolve server.port: %w", err)
+		return Config{}, fmt.Errorf("resolve server: %w", err)
 	}
 
-	resolved := Server{
-		Hostname:      *server.Hostname,
-		Prefix:        *server.Prefix,
-		Port:          port,
-		TLSVerify:     *server.Insecure == "0",
-		ProxyHostname: *server.ProxyHostname,
-		ProxyScheme:   *server.ProxyScheme,
-		ProxyUser:     *server.ProxyUser,
-		ProxyPassword: *server.ProxyPassword,
-		NoProxy:       splitNoProxy(*server.NoProxy),
+	candlepinPort, err := strconv.ParseUint(*server.Port, 10, 16)
+	if err != nil {
+		return Config{}, fmt.Errorf("parse server port: %w", err)
 	}
-	if err := resolveProxyDefaults(&resolved, server); err != nil {
-		return Config{}, err
+
+	proxy, err := resolveURI(*server.ProxyScheme, *server.ProxyHostname, *server.ProxyPort, "")
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve proxy: %w", err)
 	}
+
+	proxyPassword, _ := proxy.User.Password()
 
 	caDir := *partial.RHSM.CACertDir
 	repoCACert := strings.ReplaceAll(*partial.RHSM.RepoCACert, "%(ca_cert_dir)s", caDir)
 
 	return Config{
-		Server: resolved,
+		Server: Server{
+			Hostname:      candlepin.Hostname(),
+			Prefix:        candlepin.Path,
+			Port:          uint16(candlepinPort),
+			TLSVerify:     !*server.Insecure,
+			ProxyHostname: proxy.Host,
+			ProxyScheme:   proxy.Scheme,
+			ProxyUser:     proxy.User.Username(),
+			ProxyPassword: proxyPassword,
+			NoProxy:       *server.NoProxy,
+		},
 		RHSM: RHSM{
 			CACertDir:  caDir,
 			RepoCACert: repoCACert,
@@ -74,46 +79,16 @@ func (partial dtoConfig) resolve() (Config, error) {
 	}, nil
 }
 
-// resolveProxyDefaults applies RHSM defaults for an enabled proxy.
-func resolveProxyDefaults(resolved *Server, partial dtoServer) error {
-	if resolved.ProxyHostname == "" {
-		return nil
+func resolveURI(scheme, hostname, port, prefix string) (url.URL, error) {
+	if hostname == "" {
+		return url.URL{}, nil
 	}
 
-	if resolved.ProxyScheme == "" {
-		resolved.ProxyScheme = "http"
+	if scheme == "" {
+		scheme = "https"
 	}
 
-	if *partial.ProxyPort == "" {
-		resolved.ProxyPort = 3128
+	parsed := &url.URL{Scheme: scheme, Host: net.JoinHostPort(hostname, port), Path: prefix}
 
-		return nil
-	}
-
-	port, err := parseUint16(*partial.ProxyPort)
-	if err != nil {
-		return fmt.Errorf("resolve server.proxy_port: %w", err)
-	}
-
-	resolved.ProxyPort = port
-
-	return nil
-}
-
-// splitNoProxy converts RHSM's comma-separated bypass list to individual rules.
-func splitNoProxy(value string) []string {
-	if value == "" {
-		return []string{}
-	}
-
-	entries := strings.Split(value, ",")
-
-	result := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry = strings.TrimSpace(entry); entry != "" {
-			result = append(result, entry)
-		}
-	}
-
-	return result
+	return *parsed, nil
 }

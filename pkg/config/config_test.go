@@ -17,13 +17,13 @@ func TestGetUsesConfiguredRHSMPath(t *testing.T) {
 	configPath := filepath.Join(dir, "heartbeat.conf")
 	rhsmPath := filepath.Join(dir, "rhsm.conf")
 
-	rhsmConfig := "[server]\n" + "hostname = satellite.example.com\n" + "port = 8443\n"
+	rhsmConfig := "[server]\nhostname = satellite.example.com\nport = 8443\n"
 	if err := os.WriteFile(rhsmPath, []byte(rhsmConfig), 0o600); err != nil {
 		t.Fatalf("write RHSM configuration: %v", err)
 	}
 
-	t.Setenv(constants.ConfigPathEnv, configPath)
-	t.Setenv(constants.RHSMPathEnv, rhsmPath)
+	t.Setenv(string(constants.ConfigPath), configPath)
+	t.Setenv(string(constants.RHSMConfigPath), rhsmPath)
 
 	got, err := Get()
 	if err != nil {

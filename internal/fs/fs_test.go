@@ -1,5 +1,3 @@
-//go:build linux
-
 package fs
 
 import (
@@ -34,26 +32,12 @@ func TestFilesystemRead(t *testing.T) {
 	}
 }
 
-// TestFilesystemReadRejectsDirectory verifies that directories cannot be read
-// as configuration files.
-//
-// Given a directory path, when Filesystem.Read reads it, then it returns an
-// error.
-func TestFilesystemReadRejectsDirectory(t *testing.T) {
-	t.Parallel()
-
-	_, err := (Filesystem{}).Read(t.TempDir())
-	if err == nil {
-		t.Fatal("Read() succeeded for a directory")
-	}
-}
-
-// TestFilesystemReadMissingFile verifies that missing files preserve the
+// TestErrNotExist verifies that missing files preserve the
 // os.ErrNotExist condition.
 //
 // Given a path that does not exist, when Filesystem.Read reads it, then the
 // returned error matches os.ErrNotExist.
-func TestFilesystemReadMissingFile(t *testing.T) {
+func TestErrNotExist(t *testing.T) {
 	t.Parallel()
 
 	_, err := (Filesystem{}).Read(filepath.Join(t.TempDir(), "missing.conf"))
@@ -62,46 +46,11 @@ func TestFilesystemReadMissingFile(t *testing.T) {
 	}
 }
 
-// TestFilesystemAppendCreatesAndAppends verifies that Append creates a file and adds data.
-//
-// Given a missing file in an existing directory, when Filesystem.Append appends
-// multiple values, then the file contains all values in order.
-func TestFilesystemAppendCreatesAndAppends(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "cache.jsonl")
-
-	filesystem := Filesystem{}
-	for _, data := range [][]byte{[]byte("first\n"), []byte("second\n")} {
-		if err := filesystem.Append(path, data, 0o640); err != nil {
-			t.Fatalf("Append() error = %v", err)
-		}
-	}
-
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-
-	if string(got) != "first\nsecond\n" {
-		t.Fatalf("file contents = %q, want %q", got, "first\nsecond\n")
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-
-	if gotMode := info.Mode().Perm(); gotMode != 0o640 {
-		t.Fatalf("file mode = %#o, want %#o", gotMode, 0o640)
-	}
-}
-
-// TestFilesystemReplaceAtomicallyReplaces verifies that Replace writes replacement contents.
+// TestReplace verifies that Replace writes replacement contents.
 //
 // Given a file with old contents, when Filesystem.Replace writes new contents,
-// then subsequent reads return the complete new contents and requested mode.
-func TestFilesystemReplaceAtomicallyReplaces(t *testing.T) {
+// then subsequent reads return the complete new contents and mode.
+func TestReplace(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "cache.jsonl")

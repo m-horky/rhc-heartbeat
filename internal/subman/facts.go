@@ -8,8 +8,8 @@ import (
 	"github.com/m-horky/rhc-heartbeat/internal/exec"
 )
 
-// Read executes subscription-manager facts --list and parses its output.
-func Read(runner exec.Runner) (map[string]string, error) {
+// GetFacts executes subscription-manager facts --list and parses its output.
+func GetFacts(runner exec.Runner) (map[string]string, error) {
 	result, err := runner.Run(exec.Command{
 		Path: "/usr/sbin/subscription-manager",
 		Args: []string{"facts", "--list"},

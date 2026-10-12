@@ -7,20 +7,13 @@
 // loading native settings:
 //
 //	filesystem := fs.Filesystem{}
-//	rhsmConfig, err := rhsm.Load(filesystem, "/etc/rhsm/rhsm.conf")
-//	if err != nil {
-//		return err
-//	}
-//
-//	cfg, err := config.Load(
+//	rhsmConfig, _ := rhsm.Load(filesystem, "/etc/rhsm/rhsm.conf")
+//	cfg, _ := config.Load(
 //		filesystem,
 //		"/etc/rhc-heartbeat/config.toml",
 //		"/etc/rhc-heartbeat/conf.d",
 //		&rhsmConfig,
 //	)
-//	if err != nil {
-//		return err
-//	}
 //	_ = cfg.API.Heartbeat.URI
 //	_ = cfg.HTTP.Timeout.Request
 package config

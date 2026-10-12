@@ -2,12 +2,12 @@ package config
 
 import _ "embed"
 
-// defaultConfig contains the package's embedded configuration defaults.
+// defaultConfig contains the package's embedded configuration newPartialFromDefaults.
 //
 //go:embed default.conf
 var defaultConfig []byte
 
-// defaults decodes the embedded native defaults into a partial configuration.
-func defaults() (dtoConfig, error) {
-	return parse(defaultConfig)
+// newPartialFromDefaults decodes the embedded native newPartialFromDefaults into a partial configuration.
+func newPartialFromDefaults() (*dtoConfig, error) {
+	return newPartialFromTOML(defaultConfig)
 }

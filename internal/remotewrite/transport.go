@@ -7,10 +7,10 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/golang/snappy"
@@ -24,14 +24,14 @@ const (
 	connectTimeout = 5 * time.Second
 )
 
-// Options contains application-specific values used to configure the Remote Write client.
+// Options contain application-specific values used to configure the Remote Write client.
 type Options struct {
-	// ClientCertificatePath is the path to the mutual TLS client certificate.
-	ClientCertificatePath string
-	// ClientKeyPath is the path to the mutual TLS client key.
-	ClientKeyPath string
-	// UserAgent is sent with each Remote Write request.
-	UserAgent string
+	Filesystem         fs.FS
+	CACertificatePath  string
+	CertificatePath    string
+	CertificateKeyPath string
+	UserAgent          string
+	Insecure           bool
 }
 
 // Client sends heartbeat batches to a Prometheus Remote Write v1 endpoint.
@@ -42,21 +42,16 @@ type Client struct {
 }
 
 // New constructs a Remote Write client using resolved heartbeat configuration and supplied options.
-func New(cfg config.Config, options Options) (*Client, error) {
-	endpoint, err := validateEndpoint(cfg.Heartbeat.URI.String())
+func New(c config.Config, options Options) (*Client, error) {
+	httpClient, err := newHTTPClient(options, c.Heartbeat.TLSVerify, &c.HTTP.Proxy.URI)
 	if err != nil {
 		return nil, err
 	}
 
-	httpClient, err := newHTTPClient(cfg, endpoint, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{endpoint: endpoint, http: httpClient, userAgent: options.UserAgent}, nil
+	return &Client{endpoint: c.Heartbeat.URI.String(), http: httpClient, userAgent: options.UserAgent}, nil
 }
 
-// Upload encodes and sends the supplied heartbeats as one Snappy-compressed Remote Write request.
+// Upload encodes and sends the supplied heartbeats as a Snappy-compressed Remote Write request.
 func (client *Client) Upload(ctx context.Context, heartbeats []heartbeat.Heartbeat) error {
 	if client == nil || client.http == nil {
 		return errors.New("upload Prometheus Remote Write samples: missing client")
@@ -103,153 +98,96 @@ func (client *Client) CloseIdleConnections() {
 	}
 }
 
-// validateEndpoint parses and validates a configured Remote Write endpoint URI.
-func validateEndpoint(endpoint string) (string, error) {
-	parsed, err := url.ParseRequestURI(endpoint)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("invalid Prometheus Remote Write endpoint URL %q", endpoint)
-	}
-
-	return endpoint, nil
-}
-
-// newHTTPClient creates an HTTP client configured with endpoint TLS and proxy settings.
-func newHTTPClient(cfg config.Config, endpoint string, options Options) (*http.Client, error) {
+// newHTTPClient creates a configured HTTP client.
+func newHTTPClient(options Options, tls bool, proxy *url.URL) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
 	transport.IdleConnTimeout = 30 * time.Second
 
-	parsedEndpoint, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("parse Prometheus Remote Write endpoint URL: %w", err)
-	}
-
-	if parsedEndpoint.Scheme == "https" {
-		tlsConfig, err := newTLSConfig(cfg, options)
+	if tls {
+		tlsConfig, err := newTLSConfig(options)
 		if err != nil {
 			return nil, err
 		}
 
 		transport.TLSClientConfig = tlsConfig
+	} else {
+		slog.Debug("using insecure HTTP transport")
 	}
 
-	if err := configureProxy(transport, cfg.HTTP.Proxy); err != nil {
-		return nil, err
+	if proxy != nil && proxy.String() != "" {
+		transport.Proxy = http.ProxyURL(proxy)
+		slog.Debug("using proxy", "proxy", proxy.Redacted())
 	}
 
 	return &http.Client{
-		Transport:     transport,
-		Timeout:       requestTimeout,
-		CheckRedirect: preventCrossOriginRedirect,
+		Transport: transport,
+		Timeout:   requestTimeout,
 	}, nil
 }
 
-// preventCrossOriginRedirect rejects redirects that change the request origin.
-func preventCrossOriginRedirect(request *http.Request, via []*http.Request) error {
-	if len(via) == 0 {
-		return nil
-	}
-
-	previous := via[len(via)-1].URL
-	if !strings.EqualFold(previous.Scheme, request.URL.Scheme) ||
-		!strings.EqualFold(previous.Hostname(), request.URL.Hostname()) ||
-		effectivePort(previous) != effectivePort(request.URL) {
-		return errors.New("refusing cross-origin redirect")
-	}
-
-	return nil
-}
-
-// effectivePort returns the URL port or the default port for HTTP(S).
-func effectivePort(value *url.URL) string {
-	if port := value.Port(); port != "" {
-		return port
-	}
-
-	switch strings.ToLower(value.Scheme) {
-	case "http":
-		return "80"
-	case "https":
-		return "443"
-	default:
-		return ""
-	}
-}
-
 // newTLSConfig creates the endpoint TLS configuration, including configured certificate verification.
-func newTLSConfig(cfg config.Config, options Options) (*tls.Config, error) {
-	certificate, err := tls.LoadX509KeyPair(options.ClientCertificatePath, options.ClientKeyPath)
+func newTLSConfig(options Options) (*tls.Config, error) {
+	certificate, err := loadX509KeyPair(options.Filesystem, options.CertificatePath, options.CertificateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load Remote Write client certificate: %w", err)
 	}
 
-	rootCAs, err := loadRootCAs(cfg.Heartbeat.CAPath)
+	rootCAs, err := loadX509CA(options.Filesystem, options.CACertificatePath)
 	if err != nil {
 		return nil, err
 	}
 
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{certificate},
-		RootCAs:      rootCAs,
-		//nolint:gosec // Configuration intentionally controls server certificate validation.
-		InsecureSkipVerify: !cfg.Heartbeat.TLSVerify,
+		MinVersion:         tls.VersionTLS12,
+		Certificates:       []tls.Certificate{certificate},
+		RootCAs:            rootCAs,
+		InsecureSkipVerify: options.Insecure, //nolint:gosec // Configurable for development purposes.
 	}, nil
 }
 
-// loadRootCAs loads system roots and appends the optionally configured CA certificate.
-func loadRootCAs(caPath string) (*x509.CertPool, error) {
-	rootCAs, err := x509.SystemCertPool()
+// loadX509KeyPair reimplements tls.LoadX509KeyPair while using the provided filesystem.
+func loadX509KeyPair(filesystem fs.FS, certPath, keyPath string) (tls.Certificate, error) {
+	cert, err := filesystem.Read(certPath)
 	if err != nil {
-		return nil, fmt.Errorf("load system CA certificates: %w", err)
+		return tls.Certificate{}, fmt.Errorf("read certificate: %w", err)
 	}
 
-	if rootCAs == nil {
-		rootCAs = x509.NewCertPool()
-	}
-
-	if caPath == "" || caPath == "system" {
-		return rootCAs, nil
-	}
-
-	caData, err := (fs.Filesystem{}).Read(caPath)
+	key, err := filesystem.Read(keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("read Remote Write CA certificate %s: %w", caPath, err)
+		return tls.Certificate{}, fmt.Errorf("read certificate key: %w", err)
 	}
 
-	if !rootCAs.AppendCertsFromPEM(caData) {
-		return nil, fmt.Errorf("read Remote Write CA certificate %s: no certificates found", caPath)
+	certificate, err := tls.X509KeyPair(cert, key)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("parse certificate pair: %w", err)
 	}
 
-	return rootCAs, nil
+	return certificate, nil
 }
 
-// configureProxy applies the configured proxy URI and credentials to the transport.
-func configureProxy(transport *http.Transport, proxy config.Proxy) error {
-	if proxy.URI.String() == "" {
-		if proxy.Username != "" || proxy.Password != "" {
-			return errors.New("configure HTTP proxy: credentials require a proxy URI")
+// loadX509CA selects between the system CA store or the provided CA certificate path.
+func loadX509CA(filesystem fs.FS, caPath string) (*x509.CertPool, error) {
+	if caPath == "system" {
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, fmt.Errorf("use system CA certificates: %w", err)
 		}
 
-		return nil
+		return pool, nil
 	}
 
-	proxyURL := proxy.URI
-	if proxyURL.Hostname() == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https") {
-		return errors.New("configure HTTP proxy: invalid proxy URL")
+	pool := x509.NewCertPool()
+
+	raw, err := filesystem.Read(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("read CA certificate %s: %w", caPath, err)
 	}
 
-	if proxyURL.User != nil {
-		return errors.New("configure HTTP proxy: credentials must not be embedded in the proxy URI")
+	if ok := pool.AppendCertsFromPEM(raw); !ok {
+		return nil, fmt.Errorf("use CA certificate: %s", caPath)
 	}
 
-	if proxy.Username != "" || proxy.Password != "" {
-		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
-	}
-
-	transport.Proxy = http.ProxyURL(&proxyURL)
-
-	return nil
+	return pool, nil
 }

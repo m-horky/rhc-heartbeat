@@ -16,7 +16,7 @@ type Lock struct {
 
 // Acquire obtains the application process lock, waiting until it is available or ctx is canceled.
 func Acquire(ctx context.Context) (*Lock, error) {
-	implementation, err := internallock.Acquire(ctx, constants.DefaultProcessLockPath, func(pid int) {
+	implementation, err := internallock.Acquire(ctx, constants.Path(constants.LockPath), func(pid int) {
 		slog.Info("waiting for another process to finish", "pid", pid)
 	})
 	if err != nil {

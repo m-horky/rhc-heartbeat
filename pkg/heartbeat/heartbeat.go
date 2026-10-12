@@ -3,14 +3,14 @@ package heartbeat
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/m-horky/rhc-heartbeat/internal/bootid"
 	"github.com/m-horky/rhc-heartbeat/internal/clock"
-	"github.com/m-horky/rhc-heartbeat/internal/fs"
+	internalfs "github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
-	"github.com/m-horky/rhc-heartbeat/pkg/products"
+	"github.com/m-horky/rhc-heartbeat/pkg/product"
 	"github.com/m-horky/rhc-heartbeat/pkg/profile"
 )
 
@@ -19,99 +19,82 @@ type Heartbeat struct {
 	HostID                string
 	HostOrg               string
 	BootID                string
-	TimeMonotonic         time.Duration
-	TimeBoottime          time.Duration
 	TimeUnix              time.Time
+	TimeMonotonic         time.Duration
 	Kind                  Kind
-	MarketplaceID         string
-	MarketplaceAccountID  string
-	MarketplaceInstanceID string
-	MarketplaceOfferIDs   []string
+	MarketplaceID         *string
+	MarketplaceAccountID  *string
+	MarketplaceInstanceID *string
+	MarketplaceOfferIDs   *[]string
 	VCPUCount             *uint64
-	ProductIDs            []string
-}
-
-// sources groups heartbeat inputs so collect can be tested with deterministic readers
-// while Get uses system implementations.
-type sources struct {
-	readIdentity   func() (consumer.Identity, error)
-	readBootID     func() (string, error)
-	readClock      func() (clock.Reading, error)
-	readProfile    func() (profile.Profile, error)
-	readProductIDs func() ([]string, error)
+	ProductIDs            *[]string
 }
 
 // Get collects a heartbeat using the system defaults and the requested kind.
-func Get(ctx context.Context, kind Kind) (Heartbeat, error) {
-	return collect(ctx, kind, sources{
-		readIdentity: consumer.Get,
-		readBootID: func() (string, error) {
-			return bootid.Read(fs.Filesystem{})
-		},
-		readClock:      clock.Read,
-		readProfile:    profile.Get,
-		readProductIDs: products.Get,
-	})
-}
+func Get(_ context.Context, kind Kind) (Heartbeat, error) {
+	// Go is making is handle the situations where some portion of the collection fails.
+	// In real conditions, it should be very rare to impossible for it to happen.
+	//
+	// Given the situation, we are opting to include data telling us _the system
+	// is online_, even if it is not billable because we don't know what it is.
 
-// collect reads each heartbeat source and combines the results into one value.
-func collect(ctx context.Context, kind Kind, source sources) (Heartbeat, error) {
-	if !kind.Valid() {
-		return Heartbeat{}, fmt.Errorf("collect heartbeat: invalid kind %q", kind)
-	}
-
-	if err := ctx.Err(); err != nil {
+	// Collect core metadata.
+	hb, err := newHeartbeat(kind)
+	if err != nil {
 		return Heartbeat{}, fmt.Errorf("collect heartbeat: %w", err)
 	}
 
-	identity, err := source.readIdentity()
+	// Collect "optional" system profile.
+	systemProfile, err := profile.Get()
 	if err != nil {
-		return Heartbeat{}, fmt.Errorf("read heartbeat identity: %w", err)
+		return Heartbeat{}, fmt.Errorf("collect system profile: %w", err)
 	}
 
-	bootID, err := source.readBootID()
+	hb.MarketplaceID = systemProfile.ID
+	hb.MarketplaceAccountID = systemProfile.Account
+	hb.MarketplaceInstanceID = systemProfile.Instance
+	hb.MarketplaceOfferIDs = systemProfile.Offers
+	hb.VCPUCount = systemProfile.VCPUCount
+
+	// Collect "optional" system products.
+	products, err := product.Get()
 	if err != nil {
-		return Heartbeat{}, fmt.Errorf("read heartbeat boot ID: %w", err)
+		return Heartbeat{}, fmt.Errorf("collect system products: %w", err)
 	}
 
-	clockReading, err := source.readClock()
-	if err != nil {
-		return Heartbeat{}, fmt.Errorf("read heartbeat clocks: %w", err)
+	var productIDs []string
+	for _, p := range products {
+		productIDs = append(productIDs, strconv.Itoa(p.ID))
 	}
 
-	systemProfile, err := source.readProfile()
-	if err != nil {
-		slog.Warn("cannot read heartbeat system profile", "err", err)
+	hb.ProductIDs = &productIDs
 
-		systemProfile = profile.Profile{}
+	return hb, nil
+}
+
+// newHeartbeat creates a minimal Heartbeat object, containing required fields.
+func newHeartbeat(kind Kind) (Heartbeat, error) {
+	identity, err := consumer.Get()
+	if err != nil {
+		return Heartbeat{}, fmt.Errorf("construct a heartbeat: %w", err)
 	}
 
-	productIDs, err := source.readProductIDs()
+	bootID, err := bootid.Read(internalfs.Filesystem{})
 	if err != nil {
-		slog.Warn("cannot read heartbeat product IDs", "err", err)
-
-		productIDs = nil
+		return Heartbeat{}, fmt.Errorf("construct a heartbeat: %w", err)
 	}
 
-	monotonicTime := time.Duration(clockReading.TimeMonotonic.Sec)*time.Second +
-		time.Duration(clockReading.TimeMonotonic.Nsec)
-	boottime := time.Duration(clockReading.TimeBoottime.Sec)*time.Second +
-		time.Duration(clockReading.TimeBoottime.Nsec)
-	unixTime := time.Unix(clockReading.Time.Sec, clockReading.Time.Nsec).UTC()
+	systemTime, err := clock.Read()
+	if err != nil {
+		return Heartbeat{}, fmt.Errorf("construct a heartbeat: %w", err)
+	}
 
 	return Heartbeat{
-		HostID:                identity.UUID,
-		HostOrg:               identity.OrgID,
-		BootID:                bootID,
-		TimeMonotonic:         monotonicTime,
-		TimeBoottime:          boottime,
-		TimeUnix:              unixTime,
-		Kind:                  kind,
-		MarketplaceID:         systemProfile.MarketplaceID,
-		MarketplaceAccountID:  systemProfile.MarketplaceAccountID,
-		MarketplaceInstanceID: systemProfile.MarketplaceInstanceID,
-		MarketplaceOfferIDs:   systemProfile.MarketplaceOfferIDs,
-		VCPUCount:             systemProfile.VCPUCount,
-		ProductIDs:            productIDs,
+		HostID:        identity.UUID,
+		HostOrg:       identity.OrgID,
+		BootID:        bootID,
+		TimeUnix:      time.Unix(systemTime.TimeUnix.Sec, systemTime.TimeUnix.Nsec).UTC(),
+		TimeMonotonic: time.Duration(systemTime.TimeMonotonic.Sec)*time.Second + time.Duration(systemTime.TimeMonotonic.Nsec),
+		Kind:          kind,
 	}, nil
 }

@@ -1,6 +1,6 @@
 // Package cache stores pending heartbeats as JSONL on the local filesystem.
 //
-// New creates a cache using an fs.WriteFS implementation and a cache file path.
+// New creates a cache using a fs.WriteFS implementation and a cache file path.
 // Append adds one heartbeat, ReadAll loads pending heartbeats, and Rewrite
 // atomically replaces the cached records.
 //

@@ -2,48 +2,36 @@ package constants
 
 import "os"
 
+type pathID string
+
 const (
-	// ConfigPathEnv selects the heartbeat configuration file.
-	ConfigPathEnv = "RHC_HEARTBEAT_CONFIG"
-	// DefaultConfigPath is the default heartbeat configuration file.
-	DefaultConfigPath = "/etc/rhc/rhc-heartbeat.conf"
-	// DefaultDropInDir is the default directory for native configuration drop-ins.
-	DefaultDropInDir = "/etc/rhc/rhc-heartbeat.conf.d/"
-
-	// RHSMPathEnv selects the legacy RHSM configuration file.
-	RHSMPathEnv = "RHC_HEARTBEAT_RHSM_CONFIG"
-	// DefaultRHSMPath is the default legacy RHSM configuration file.
-	DefaultRHSMPath = "/etc/rhsm/rhsm.conf"
-
-	// PendingCachePathEnv selects the persistent cache file for undelivered heartbeats.
-	PendingCachePathEnv = "RHC_HEARTBEAT_PENDING_CACHE_PATH"
-	// DefaultPendingCachePath is the default persistent cache file for undelivered heartbeats.
-	DefaultPendingCachePath = "/var/lib/rhc/heartbeat.jsonl"
-
-	// DefaultProcessLockPath is the global runtime lock file for rhc-heartbeat.
-	DefaultProcessLockPath = "/run/lock/rhc-heartbeat.lock"
-
-	// ClientCertificatePathEnv selects the client certificate used for Remote Write mutual TLS.
-	ClientCertificatePathEnv = "RHC_HEARTBEAT_CLIENT_CERT_PATH"
-	// DefaultClientCertificatePath is the default client certificate used for Remote Write mutual TLS.
-	DefaultClientCertificatePath = "/etc/pki/consumer/cert.pem"
-
-	// ClientKeyPathEnv selects the client key used for Remote Write mutual TLS.
-	ClientKeyPathEnv = "RHC_HEARTBEAT_CLIENT_KEY_PATH"
-	// DefaultClientKeyPath is the default client key used for Remote Write mutual TLS.
-	DefaultClientKeyPath = "/etc/pki/consumer/key.pem"
-
-	// DefaultProductCertificateDefaultDir contains default product certificates.
-	DefaultProductCertificateDefaultDir = "/etc/pki/product-default"
-	// DefaultProductCertificateDir contains installed product certificates.
-	DefaultProductCertificateDir = "/etc/pki/product"
+	ConfigPath        pathID = "RHC_HEARTBEAT_CONFIG"
+	ConfigDropInsDir  pathID = "RHC_HEARTBEAT_DROPINS"
+	RHSMConfigPath    pathID = "RHC_HEARTBEAT_RHSM_CONFIG"
+	PendingCachePath  pathID = "RHC_HEARTBEAT_PENDING_CACHE"
+	LockPath          pathID = "RHC_HEARTBEAT_LOCK"
+	IdentityCertPath  pathID = "RHC_HEARTBEAT_CONSUMER_CERT"
+	IdentityKeyPath   pathID = "RHC_HEARTBEAT_CONSUMER_KEY"
+	ProductDir        pathID = "RHC_HEARTBEAT_PRODUCT_DIR"
+	DefaultProductDir pathID = "RHC_HEARTBEAT_DEFAULT_PRODUCT_DIR"
 )
 
-// PathFromEnv returns the environment variable's path, or defaultPath when it is unset or empty.
-func PathFromEnv(environmentVariable, defaultPath string) string {
-	if path := os.Getenv(environmentVariable); path != "" {
+var paths = map[pathID]string{ //nolint:gochecknoglobals
+	ConfigPath:        "/etc/rhc/rhc-heartbeat.conf",
+	ConfigDropInsDir:  "/etc/rhc/rhc-heartbeat.conf.d/",
+	RHSMConfigPath:    "/etc/rhsm/rhsm.conf",
+	PendingCachePath:  "/var/lib/rhc/heartbeat.jsonl",
+	LockPath:          "/run/lock/rhc-heartbeat.lock",
+	IdentityCertPath:  "/etc/pki/consumer/cert.pem",
+	IdentityKeyPath:   "/etc/pki/consumer/key.pem",
+	ProductDir:        "/etc/pki/product",
+	DefaultProductDir: "/etc/pki/product-default",
+}
+
+func Path(name pathID) string {
+	if path := os.Getenv(string(name)); path != "" {
 		return path
 	}
 
-	return defaultPath
+	return paths[name]
 }

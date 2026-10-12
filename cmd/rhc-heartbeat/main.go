@@ -13,7 +13,6 @@ import (
 
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
-	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 	"github.com/m-horky/rhc-heartbeat/pkg/lock"
 	"github.com/m-horky/rhc-heartbeat/pkg/upload"
@@ -78,7 +77,7 @@ func run(ctx context.Context, args []string) error {
 	defer uploader.CloseIdleConnections()
 
 	// Load past heartbeats.
-	hbCache, err := cache.Load(constants.PathFromEnv(constants.PendingCachePathEnv, constants.DefaultPendingCachePath))
+	hbCache, err := cache.Load()
 	if err != nil {
 		return fmt.Errorf("cannot load cache: %w", err)
 	}

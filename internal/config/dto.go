@@ -2,15 +2,13 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
-	"net"
 	"net/url"
 	"strings"
 	"time"
 )
-
-var errInvalidURL = errors.New("invalid HTTP(S) URL")
 
 // dtoConfig contains one partial native configuration layer.
 type dtoConfig struct {
@@ -33,10 +31,8 @@ type dtoTimeout struct {
 
 // dtoProxy contains optional proxy settings, including bypass rules.
 type dtoProxy struct {
-	URI      *string   `toml:"uri"`
-	Username *string   `toml:"username"`
-	Password *string   `toml:"password"`
-	NoProxy  *[]string `toml:"no-proxy"`
+	URI     *string `toml:"uri"`
+	NoProxy *string `toml:"no-proxy"`
 }
 
 // dtoAPI contains partial API endpoint settings.
@@ -51,77 +47,84 @@ type dtoEndpoint struct {
 	CAPath    *string `toml:"ca-path"`
 }
 
-// update recursively validates and merges supplied native configuration leaves.
-func (partial *dtoConfig) update(next dtoConfig, source string) {
-	partial.HTTP.update(next.HTTP, source)
-	partial.API.update(next.API, source)
+// update validates and merges the supplied partial configuration into the current dtoConfig.
+func (partial *dtoConfig) update(next *dtoConfig) error {
+	// TODO Should we prefer a new object over mutation?
+	if next == nil {
+		return nil
+	}
+
+	if err := partial.HTTP.Timeout.update(next.HTTP.Timeout); err != nil {
+		return fmt.Errorf("invalid http.timeout: %w", err)
+	}
+
+	if err := partial.HTTP.Proxy.update(next.HTTP.Proxy); err != nil {
+		return fmt.Errorf("invalid http.proxy: %w", err)
+	}
+
+	if err := partial.API.Heartbeat.update(next.API.Heartbeat); err != nil {
+		return fmt.Errorf("invalid api.heartbeat: %w", err)
+	}
+
+	return nil
 }
 
-// update validates and merges timeout and proxy configuration sections.
-func (partial *dtoHTTP) update(next dtoHTTP, source string) {
-	partial.Timeout.update(next.Timeout, source)
-	partial.Proxy.update(next.Proxy, source)
-}
-
-// update validates and merges nonnegative timeout values in seconds.
-func (partial *dtoTimeout) update(next dtoTimeout, source string) {
+// update validates and merges HTTP timeout preferences.
+func (partial *dtoTimeout) update(next dtoTimeout) error {
 	if next.Connect != nil {
-		if validSeconds(*next.Connect) {
-			partial.Connect = new(*next.Connect)
-		} else {
-			reject(source, "http.timeout.connect")
+		if ok := isTimeDuration(*next.Connect); !ok {
+			return fmt.Errorf("invalid connect duration: %d", *next.Connect)
 		}
+
+		partial.Connect = next.Connect
 	}
 
 	if next.Request != nil {
-		if validSeconds(*next.Request) {
-			partial.Request = new(*next.Request)
-		} else {
-			reject(source, "http.timeout.request")
+		if ok := isTimeDuration(*next.Request); !ok {
+			return fmt.Errorf("invalid request duration: %d", next.Request)
 		}
+
+		partial.Request = next.Request
 	}
 
 	if next.Idle != nil {
-		if validSeconds(*next.Idle) {
-			partial.Idle = new(*next.Idle)
-		} else {
-			reject(source, "http.timeout.idle")
+		if ok := isTimeDuration(*next.Idle); !ok {
+			return fmt.Errorf("invalid idle duration: %d", *next.Idle)
 		}
+
+		partial.Idle = next.Idle
 	}
+
+	return nil
 }
 
 // update validates and merges proxy URLs, credentials, and bypass rules.
-func (partial *dtoProxy) update(next dtoProxy, source string) {
-	if next.URI != nil {
-		if value := checkedURI(*next.URI, source, "http.proxy.uri"); value != nil {
-			partial.URI = value
-		}
+func (partial *dtoProxy) update(next dtoProxy) error {
+	if next.URI == nil || *next.URI == "" {
+		return nil
 	}
 
-	if next.Username != nil {
-		partial.Username = new(strings.TrimSpace(*next.Username))
+	if err := isValidURI(*next.URI); err != nil {
+		return err
 	}
 
-	if next.Password != nil {
-		partial.Password = new(*next.Password)
-	}
+	partial.URI = new(*next.URI)
 
 	if next.NoProxy != nil {
-		partial.NoProxy = new(normalizeNoProxy(*next.NoProxy, source))
+		partial.NoProxy = new(*next.NoProxy)
 	}
-}
 
-// update validates and merges partial API endpoint settings.
-func (partial *dtoAPI) update(next dtoAPI, source string) {
-	partial.Heartbeat.update(next.Heartbeat, source)
+	return nil
 }
 
 // update validates and merges endpoint URL and TLS settings.
-func (partial *dtoEndpoint) update(next dtoEndpoint, source string) {
+func (partial *dtoEndpoint) update(next dtoEndpoint) error {
 	if next.URI != nil {
-		if value := checkedURI(*next.URI, source, "api.heartbeat.uri"); value != nil {
-			partial.URI = value
+		if err := isValidURI(*next.URI); err != nil {
+			return err
 		}
+
+		partial.URI = new(*next.URI)
 	}
 
 	if next.TLSVerify != nil {
@@ -131,188 +134,37 @@ func (partial *dtoEndpoint) update(next dtoEndpoint, source string) {
 	if next.CAPath != nil {
 		partial.CAPath = new(strings.TrimSpace(*next.CAPath))
 	}
+
+	return nil
 }
 
-// checkedURI validates a supplied URL, preserving explicit emptiness for final resolution.
-func checkedURI(value, source, field string) *string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return new("")
+// isValidURI validates a supplied URI.
+func isValidURI(value string) error {
+	if s := strings.TrimSpace(value); s == "" {
+		return errors.New("no content")
 	}
 
-	parsed, err := parseHTTPURL(value)
-	if err != nil {
-		reject(source, field)
-
-		return nil
-	}
-
-	if strings.EqualFold(parsed.Scheme, "http") {
-		slog.Warn("configuration uses an unencrypted HTTP URI", "source", source, "field", field)
-	}
-
-	return new(value)
-}
-
-// parseHTTPURL validates an absolute HTTP(S) URL without embedded credentials or request data.
-func parseHTTPURL(value string) (*url.URL, error) {
 	parsed, err := url.Parse(value)
-	if err != nil ||
-		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) ||
-		parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errInvalidURL
+	if err != nil {
+		return fmt.Errorf("invalid URI: %w", err)
 	}
 
-	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https")
+	}
 
-	return parsed, nil
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("no hostname")
+	}
+
+	if parsed.Scheme == "http" {
+		slog.Warn("configuration contains insecure HTTP")
+	}
+
+	return nil
 }
 
-// validSeconds reports whether seconds can be represented as a time.Duration.
-func validSeconds(seconds int64) bool {
+// isTimeDuration validates the input can be represented as a time.Duration.
+func isTimeDuration(seconds int64) bool {
 	return seconds >= 0 && seconds <= math.MaxInt64/int64(time.Second)
-}
-
-// reject logs an invalid setting without disclosing its configured value.
-func reject(source, field string) {
-	slog.Debug("ignoring invalid configuration value", "source", source, "field", field)
-}
-
-// validateBypassRule reports whether rule follows the documented no-proxy syntax.
-func validateBypassRule(rule string) bool {
-	if rule == "*" {
-		return true
-	}
-
-	rule = strings.TrimPrefix(rule, "*.")
-	if rule == "" || strings.Contains(rule, "*") {
-		return false
-	}
-
-	if strings.Contains(rule, "/") {
-		return validateCIDRRule(rule)
-	}
-
-	host := rule
-	switch {
-	case strings.HasPrefix(rule, "["):
-		parsedHost, port, err := net.SplitHostPort(rule)
-		switch {
-		case err == nil:
-			if !validRulePort(port) {
-				return false
-			}
-
-			host = parsedHost
-		case strings.HasSuffix(rule, "]"):
-			host = strings.Trim(rule, "[]")
-		default:
-			return false
-		}
-	case strings.Count(rule, ":") == 1:
-		parts := strings.SplitN(rule, ":", 2)
-		if !validRulePort(parts[1]) {
-			return false
-		}
-
-		host = parts[0]
-	case strings.Count(rule, ":") > 1:
-		return net.ParseIP(rule) != nil
-	}
-
-	if host == "" {
-		return false
-	}
-
-	if _, _, err := net.ParseCIDR(host); err == nil {
-		return true
-	}
-
-	if net.ParseIP(host) != nil {
-		return true
-	}
-
-	return validDNSName(strings.TrimSuffix(host, "."))
-}
-
-// validateCIDRRule checks an IP range, optionally followed by a port.
-func validateCIDRRule(rule string) bool {
-	if _, _, err := net.ParseCIDR(rule); err == nil {
-		return true
-	}
-
-	colon := strings.LastIndex(rule, ":")
-	if colon <= strings.LastIndex(rule, "/") || !validRulePort(rule[colon+1:]) {
-		return false
-	}
-
-	_, _, err := net.ParseCIDR(rule[:colon])
-
-	return err == nil
-}
-
-// validRulePort reports whether value is a decimal TCP port.
-func validRulePort(value string) bool {
-	if value == "" {
-		return false
-	}
-
-	for _, char := range value {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-
-	port := 0
-	for _, char := range value {
-		port = port*10 + int(char-'0')
-		if port > 65535 {
-			return false
-		}
-	}
-
-	return port > 0
-}
-
-// validDNSName checks the DNS label syntax used by bypass host rules.
-func validDNSName(host string) bool {
-	if host == "" {
-		return false
-	}
-
-	for label := range strings.SplitSeq(host, ".") {
-		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-
-		for _, char := range label {
-			if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
-				(char < '0' || char > '9') && char != '-' {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
-// normalizeNoProxy trims, validates, and copies bypass rules while logging rejected entries.
-func normalizeNoProxy(rules []string, source string) []string {
-	result := make([]string, 0, len(rules))
-	for _, rule := range rules {
-		rule = strings.TrimSpace(rule)
-		if rule == "" {
-			continue
-		}
-
-		if !validateBypassRule(rule) {
-			slog.Debug("ignoring invalid no-proxy rule", "source", source, "field", "http.proxy.no-proxy")
-
-			continue
-		}
-
-		result = append(result, rule)
-	}
-
-	return result
 }

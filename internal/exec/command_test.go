@@ -5,8 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestOSRunnerCapturesOutput verifies that successful commands capture both output streams.
@@ -190,11 +191,11 @@ func TestRunnerReturnsFakeResult(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	if !reflect.DeepEqual(runner.spec, wantSpec) {
+	if !cmp.Equal(runner.spec, wantSpec) {
 		t.Errorf("Run() spec = %#v, want %#v", runner.spec, wantSpec)
 	}
 
-	if !reflect.DeepEqual(got, wantResult) {
+	if !cmp.Equal(got, wantResult) {
 		t.Errorf("Run() result = %#v, want %#v", got, wantResult)
 	}
 }

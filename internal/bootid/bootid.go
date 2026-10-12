@@ -10,7 +10,7 @@ import (
 
 const path = "/proc/sys/kernel/random/boot_id"
 
-// Read returns the trimmed contents of the kernel boot ID file.
+// Read returns kernel boot ID.
 func Read(filesystem fs.FS) (string, error) {
 	data, err := filesystem.Read(path)
 	if err != nil {

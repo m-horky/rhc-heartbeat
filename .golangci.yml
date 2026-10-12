@@ -62,6 +62,11 @@ linters:
   settings:
     depguard:
       rules:
+        modern-go:
+          list-mode: lax
+          deny:
+            - pkg: "reflect"
+              desc: "use cmp.* instead of reflect.*"
         cmd:
           list-mode: lax
           files:
@@ -69,6 +74,8 @@ linters:
           deny:
             - pkg: "github.com/m-horky/rhc-heartbeat/internal/"
               desc: "cmd/ packages must use pkg/ APIs"
+            - pkg: "github.com/m-horky/rhc-heartbeat/pkg/constants/"
+              desc: "cmd/ should delegate constants management to pkg/"
         pkg:
           list-mode: lax
           files:

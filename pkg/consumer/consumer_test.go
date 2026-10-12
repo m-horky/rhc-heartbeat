@@ -22,7 +22,7 @@ import (
 func TestGetUsesConfiguredCertificatePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "consumer.pem")
 	writeConsumerTestCertificate(t, path)
-	t.Setenv(constants.ClientCertificatePathEnv, path)
+	t.Setenv(string(constants.IdentityCertPath), path)
 
 	got, err := Get()
 	if err != nil {
