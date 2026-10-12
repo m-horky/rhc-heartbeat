@@ -91,7 +91,7 @@ func readProductExtensions(extensions []pkix.Extension) ([]Product, error) {
 
 	for _, extension := range extensions {
 		id := extension.Id
-		if !slices.Equal(id[:len(extPrefix)], extPrefix[:]) {
+		if len(id) < len(extPrefix) || !slices.Equal(id[:len(extPrefix)], extPrefix[:]) {
 			continue
 		}
 
