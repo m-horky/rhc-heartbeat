@@ -6,12 +6,13 @@
 // serialize access. For each boot ID, the cache keeps the heartbeat with the
 // greatest monotonic time.
 //
-//	pending, err := cache.Load()
-//	if err != nil {
-//	    return err
-//	}
+// BindIdentity fills missing identity fields without replacing values already
+// recorded on a heartbeat.
+//
+//	identity, _ := consumer.Get()
+//	pending, _ := cache.Load()
+//	pending.BindIdentity(identity)
+//	hb, _ := heartbeat.Get(heartbeat.KindPing)
 //	pending.Add(hb)
-//	if err := pending.Save(); err != nil {
-//	    return err
-//	}
+//	_ = pending.Save();
 package cache

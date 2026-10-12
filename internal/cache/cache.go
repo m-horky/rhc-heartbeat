@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"sort"
 
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
@@ -27,7 +29,7 @@ func New(filesystem fs.WriteFS, path string) *Cache {
 	return &Cache{filesystem: filesystem, path: path}
 }
 
-// Read returns the cached heartbeats in file order. A missing file produces an empty slice.
+// Read returns cached heartbeats in file order. A missing file produces an empty slice.
 func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
 	data, err := cache.filesystem.Read(cache.path, maxFileSize)
 	if err != nil {
@@ -60,11 +62,16 @@ func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
 	return heartbeats, nil
 }
 
-// Write replaces the cache contents with the supplied heartbeat records.
+// Write replaces the cache contents with the supplied heartbeats.
 func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
+	ordered := append([]heartbeat.Heartbeat(nil), heartbeats...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].TimeUnix.Before(ordered[j].TimeUnix)
+	})
+
 	var data bytes.Buffer
 
-	for _, hb := range heartbeats {
+	for _, hb := range ordered {
 		line, err := json.Marshal(hb)
 		if err != nil {
 			return fmt.Errorf("encode heartbeat cache: %w", err)
@@ -86,6 +93,8 @@ func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 	if err := cache.filesystem.Replace(cache.path, data.Bytes(), fileMode); err != nil {
 		return fmt.Errorf("replace heartbeat cache %s: %w", cache.path, err)
 	}
+
+	slog.Debug("heartbeat cache updated", "count", len(heartbeats), "path", cache.path)
 
 	return nil
 }

@@ -3,10 +3,12 @@ package cache
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 
 	internalcache "github.com/m-horky/rhc-heartbeat/internal/cache"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
+	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
@@ -44,18 +46,58 @@ func (cache *Cache) Read() []heartbeat.Heartbeat {
 }
 
 // Add adds a heartbeat or replaces its boot ID's value when its monotonic time is newer.
-func (cache *Cache) Add(heartbeat heartbeat.Heartbeat) {
-	for i, hb := range cache.heartbeats {
-		if hb.BootID == heartbeat.BootID {
-			if heartbeat.TimeMonotonic > hb.TimeMonotonic {
-				cache.heartbeats[i] = heartbeat
+func (cache *Cache) Add(hb heartbeat.Heartbeat) {
+	for i, existing := range cache.heartbeats {
+		if existing.BootID != hb.BootID {
+			continue
+		}
+
+		replaced := false
+
+		if hb.TimeMonotonic > existing.TimeMonotonic {
+			if hb.HostID == nil || *hb.HostID == "" {
+				hb.HostID = existing.HostID
+				replaced = true
 			}
 
-			return
+			if hb.HostOrg == nil || *hb.HostOrg == "" {
+				hb.HostOrg = existing.HostOrg
+				replaced = true
+			}
+
+			cache.heartbeats[i] = hb
+			if replaced {
+				slog.Debug("updated heartbeat host", "boot-id", hb.BootID)
+			}
 		}
+
+		sortHeartbeats(cache.heartbeats)
+
+		return
 	}
 
-	cache.heartbeats = append(cache.heartbeats, heartbeat)
+	cache.heartbeats = append(cache.heartbeats, hb)
+	sortHeartbeats(cache.heartbeats)
+}
+
+// sortHeartbeats orders heartbeats by their wall-clock timestamp.
+func sortHeartbeats(heartbeats []heartbeat.Heartbeat) {
+	sort.SliceStable(heartbeats, func(i, j int) bool {
+		return heartbeats[i].TimeUnix.Before(heartbeats[j].TimeUnix)
+	})
+}
+
+// BindIdentity fills missing identity fields on cached heartbeats without replacing known values.
+func (cache *Cache) BindIdentity(identity consumer.Identity) {
+	for i := range cache.heartbeats {
+		if cache.heartbeats[i].HostID == nil || *cache.heartbeats[i].HostID == "" {
+			cache.heartbeats[i].HostID = new(identity.UUID)
+		}
+
+		if cache.heartbeats[i].HostOrg == nil || *cache.heartbeats[i].HostOrg == "" {
+			cache.heartbeats[i].HostOrg = new(identity.OrgID)
+		}
+	}
 }
 
 // Clear removes all cached heartbeats from memory. Call Save to persist the empty cache.

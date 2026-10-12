@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
+	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
@@ -33,7 +34,7 @@ func TestMissingIsEmpty(t *testing.T) {
 	}
 }
 
-// TestLatestWithinBoot verifies that Set keeps the highest monotonic time per boot ID.
+// TestLatestWithinBoot verifies that Add keeps the highest monotonic time per boot ID.
 //
 // Given multiple heartbeats for one boot and one for another,
 // when they are set, then only the newest per boot is returned.

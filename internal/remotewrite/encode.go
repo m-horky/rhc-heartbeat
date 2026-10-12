@@ -47,7 +47,14 @@ func marshalSeries(schema remoteWriteDescriptors, seriesByKey map[uint64]*writeS
 		keys = append(keys, key)
 	}
 
-	slices.SortFunc(keys, cmp.Compare)
+	// Sort series, alongside having samples within a series sorted.
+	slices.SortFunc(keys, func(a, b uint64) int {
+		if order := cmp.Compare(firstTimestamp(seriesByKey[a]), firstTimestamp(seriesByKey[b])); order != 0 {
+			return order
+		}
+
+		return cmp.Compare(a, b)
+	})
 
 	request := dynamicpb.NewMessage(schema.writeRequest)
 	field := schema.writeRequest.Fields().ByName("timeseries")
@@ -63,6 +70,22 @@ func marshalSeries(schema remoteWriteDescriptors, seriesByKey map[uint64]*writeS
 	}
 
 	return payload, nil
+}
+
+// firstTimestamp returns the earliest sample timestamp in a series.
+func firstTimestamp(series *writeSeries) int64 {
+	if len(series.samples) == 0 {
+		return 0
+	}
+
+	earliest := series.samples[0].timestamp
+	for _, current := range series.samples[1:] {
+		if current.timestamp < earliest {
+			earliest = current.timestamp
+		}
+	}
+
+	return earliest
 }
 
 // appendSeries adds one label set and its timestamp-ordered samples to the request.

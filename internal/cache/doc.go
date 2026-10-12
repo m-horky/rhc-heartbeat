@@ -1,16 +1,15 @@
-// Package cache stores pending heartbeats as JSONL on the local filesystem.
+// Package cache reads and writes pending heartbeats as JSONL.
 //
 // New creates a cache using a fs.WriteFS implementation and a cache file path.
-// Append adds one heartbeat, ReadAll loads pending heartbeats, and Rewrite
-// atomically replaces the cached records.
+// Read returns heartbeats in file order, and Write atomically replaces all records.
 //
 //	store := cache.New(fs.Filesystem{}, "/var/lib/rhc/heartbeat.jsonl")
-//	if err := store.Append(heartbeat.Heartbeat{HostID: "system-uuid"}); err != nil {
-//		return err
-//	}
-//	pending, err := store.ReadAll()
+//	heartbeats, err := store.Read()
 //	if err != nil {
 //		return err
 //	}
-//	_ = pending
+//	heartbeats = append(heartbeats, heartbeat.Heartbeat{BootID: "boot-id"})
+//	if err := store.Write(heartbeats); err != nil {
+//		return err
+//	}
 package cache

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
@@ -19,12 +20,12 @@ func TestWrite(t *testing.T) {
 
 	cache := New(fs.Filesystem{}, filepath.Join(t.TempDir(), "heartbeat.jsonl"))
 
-	original := []heartbeat.Heartbeat{{HostID: "old"}, {HostID: "pending"}}
+	original := []heartbeat.Heartbeat{{HostID: new("old")}, {HostID: new("pending")}}
 	if err := cache.Write(original); err != nil {
 		t.Fatalf("Write() initial error = %v", err)
 	}
 
-	want := []heartbeat.Heartbeat{{HostID: "pending"}}
+	want := []heartbeat.Heartbeat{{HostID: new("pending")}}
 	if err := cache.Write(want); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
@@ -34,6 +35,33 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("Read() error = %v", err)
 	}
 
+	if !cmp.Equal(got, want) {
+		t.Fatalf("Read() = %#v, want %#v", got, want)
+	}
+}
+
+// TestWriteIsChronological verifies persisted JSONL records are chronological.
+//
+// Given heartbeats supplied out of timestamp order, when Write persists them,
+// then Read returns the records in ascending timestamp order.
+func TestWriteIsChronological(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	cache := New(fs.Filesystem{}, path)
+	later := heartbeat.Heartbeat{BootID: "later", TimeUnix: time.Unix(20, 0)}
+	earlier := heartbeat.Heartbeat{BootID: "earlier", TimeUnix: time.Unix(10, 0)}
+
+	if err := cache.Write([]heartbeat.Heartbeat{later, earlier}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	got, err := cache.Read()
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+
+	want := []heartbeat.Heartbeat{earlier, later}
 	if !cmp.Equal(got, want) {
 		t.Fatalf("Read() = %#v, want %#v", got, want)
 	}
