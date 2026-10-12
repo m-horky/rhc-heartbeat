@@ -115,6 +115,21 @@ func TestNewMarketplaceProfile(t *testing.T) { //nolint:funlen
 			},
 		},
 		{
+			name: "aws with combined normalized offers",
+			in: map[string]string{
+				"aws_instance_id":               "aws-instance",
+				"aws_account_id":                "aws-account",
+				"aws_billing_products":          " billing-product, shared ",
+				"aws_marketplace_product_codes": "shared, product-code ",
+			},
+			want: marketplaceProfile{
+				ID:       new("aws"),
+				Account:  new("aws-account"),
+				Instance: new("aws-instance"),
+				Offers:   new([]string{"billing-product", "shared", "product-code"}),
+			},
+		},
+		{
 			name: "azure without offers",
 			in: map[string]string{
 				"azure_instance_id":     "azure-instance",

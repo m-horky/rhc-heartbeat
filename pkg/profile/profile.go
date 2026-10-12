@@ -82,7 +82,10 @@ func newMarketplaceProfile(facts map[string]string) marketplaceProfile {
 		id = "aws"
 		instance = facts["aws_instance_id"]
 		account = facts["aws_account_id"]
-		offers = facts["aws_billing_products"] + facts["aws_marketplace_product_codes"]
+		offers = strings.Join([]string{
+			facts["aws_billing_products"],
+			facts["aws_marketplace_product_codes"],
+		}, ",")
 	}
 
 	if _, ok := facts["azure_instance_id"]; ok {
@@ -99,16 +102,7 @@ func newMarketplaceProfile(facts map[string]string) marketplaceProfile {
 		offers = facts["gcp_license_codes"]
 	}
 
-	// The concatenation above may have resulted in a string starting/ending with a comma.
-	var offersList []string
-
-	for offer := range strings.SplitSeq(offers, ",") {
-		if len(offer) == 0 {
-			continue
-		}
-
-		offersList = append(offersList, offer)
-	}
+	offersList := parseOffers(offers)
 
 	if id != "" {
 		profile.ID = new(id)
@@ -127,4 +121,27 @@ func newMarketplaceProfile(facts map[string]string) marketplaceProfile {
 	}
 
 	return profile
+}
+
+// parseOffers splits, trims, and deduplicates comma-separated marketplace offers.
+func parseOffers(offers string) []string {
+	var offersList []string
+
+	seenOffers := make(map[string]struct{})
+
+	for offer := range strings.SplitSeq(offers, ",") {
+		offer = strings.TrimSpace(offer)
+		if offer == "" {
+			continue
+		}
+
+		if _, seen := seenOffers[offer]; seen {
+			continue
+		}
+
+		seenOffers[offer] = struct{}{}
+		offersList = append(offersList, offer)
+	}
+
+	return offersList
 }
