@@ -10,7 +10,7 @@ import (
 
 type Product = internalproducts.Product
 
-// Get returns sorted, unique IDs from the system's Red Hat product certificates.
+// Get returns products found in the system's Red Hat product certificates.
 func Get() ([]Product, error) {
 	products, err := internalproducts.Read(
 		fs.Filesystem{},
