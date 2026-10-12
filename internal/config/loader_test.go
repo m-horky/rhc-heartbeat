@@ -88,6 +88,28 @@ func TestLoadReadsMainAndDropIns(t *testing.T) {
 	}
 }
 
+// TestDisableProxy verifies an override with empty proxy URI disables an inherited proxy.
+//
+// Given an RHSM proxy and an explicitly empty proxy URI in the main file, when Load resolves,
+// then the resolved proxy URI is empty.
+func TestDisableProxy(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mainPath := filepath.Join(root, "main.toml")
+	write(t, mainPath, "[http.proxy]\nuri = \"\"\n")
+
+	fallback := getRHSMconf()
+
+	got, err := Load(internalfs.Filesystem{}, mainPath, filepath.Join(root, "missing"), &fallback)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got.HTTP.Proxy.URI.String() != "" {
+		t.Errorf("proxy URI = %q, want empty", got.HTTP.Proxy.URI.String())
+	}
+}
+
 // TestLoadRejectsExplicitEmptyEndpoint verifies empty supplied URIs are not silently suppressed.
 //
 // Given an explicitly empty endpoint in the main file, when Load resolves,

@@ -100,17 +100,17 @@ func (partial *dtoTimeout) update(next dtoTimeout) error {
 
 // update validates and merges proxy URLs, credentials, and bypass rules.
 func (partial *dtoProxy) update(next dtoProxy) error {
-	if next.URI == nil || *next.URI == "" {
-		return nil
+	if next.URI != nil {
+		if *next.URI != "" {
+			if err := isValidURI(*next.URI); err != nil {
+				return err
+			}
+		}
+
+		partial.URI = new(*next.URI)
 	}
 
-	if err := isValidURI(*next.URI); err != nil {
-		return err
-	}
-
-	partial.URI = new(*next.URI)
-
-	if next.NoProxy != nil {
+	if next.NoProxy != nil && *next.NoProxy != "" {
 		partial.NoProxy = new(*next.NoProxy)
 	}
 
