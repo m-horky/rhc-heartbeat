@@ -13,6 +13,10 @@ import (
 	internalfs "github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
+const (
+	maxConfigSize = 1024 * 1024 // 1 MiB
+)
+
 // Load merges defaults, optional RHSM settings, the main file, and drop-ins.
 func Load(filesystem internalfs.FS, path, dropInDir string, rhsmFallback *rhsm.Config) (Config, error) {
 	partial, err := newPartialFromDefaults()
@@ -99,7 +103,7 @@ func discoverDropIns(filesystem internalfs.FS, directory string) ([]string, erro
 
 // newPartialFromFile reads a file and decodes its content into a partial native configuration.
 func newPartialFromFile(filesystem internalfs.FS, path string) (*dtoConfig, error) {
-	raw, err := filesystem.Read(path)
+	raw, err := filesystem.Read(path, maxConfigSize)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return &dtoConfig{}, nil

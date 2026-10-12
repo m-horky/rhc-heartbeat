@@ -10,6 +10,8 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+const maxConfigSize = 1024 * 1024 // 1 MiB
+
 // Load merges the rhsm.conf defaults with /etc/rhsm/rhsm.conf.
 func Load(filesystem internalfs.FS, path string) (Config, error) {
 	partial, err := newPartialFromDefaults()
@@ -18,7 +20,7 @@ func Load(filesystem internalfs.FS, path string) (Config, error) {
 	}
 
 	// merge rhsm.conf
-	raw, err := filesystem.Read(path)
+	raw, err := filesystem.Read(path, maxConfigSize)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return Config{}, fmt.Errorf("read rhsm.conf %s: %w", path, err)

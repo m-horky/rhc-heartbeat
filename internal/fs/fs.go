@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,9 +27,13 @@ type File interface {
 	Close() error
 }
 
-// FS is the filesystem contract used by loaders.
+// ErrTruncated indicates that a read returned only the first maxBytes bytes.
+var ErrTruncated = errors.New("file read truncated")
+
+// FS is the filesystem contract used by loaders. Read returns ErrTruncated
+// when the file contains more than the requested number of bytes.
 type FS interface {
-	Read(path string) ([]byte, error)
+	Read(path string, maxBytes int64) ([]byte, error)
 	ReadDir(path string) ([]os.DirEntry, error)
 	Stat(path string) (FileInfo, error)
 	Open(path string) (File, error)
@@ -56,13 +61,14 @@ func (Filesystem) Open(path string) (File, error) {
 	return osFile{file}, nil
 }
 
-// TODO Should Read natively support limiting the amount of bytes it is allowed to read?
-//  AI-driven security audits frequently highlight us reading some file in full, should
-//  we solve it at a single place, here?
+// Read opens a path and reads at most maxBytes bytes from its contents.
+// If more bytes were available, it returns ErrTruncated alongside the bytes that were read.
+// Error is returned if the file cannot be read.
+func (filesystem Filesystem) Read(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes < 0 || maxBytes == int64(^uint64(0)>>1) {
+		return nil, fmt.Errorf("read %s: invalid byte limit %d", path, maxBytes)
+	}
 
-// Read opens a path and reads its contents.
-// Error is returned if the file cannot be read or is not regular.
-func (filesystem Filesystem) Read(path string) ([]byte, error) {
 	file, err := filesystem.Open(path)
 	if err != nil {
 		return nil, err
@@ -81,7 +87,8 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 		return nil, &os.PathError{Op: "read", Path: path, Err: syscall.EISDIR}
 	}
 
-	data, readErr := io.ReadAll(file)
+	// Read one extra byte to detect whether the file exceeds maxBytes.
+	data, readErr := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	closeErr := file.Close()
 
 	if readErr != nil {
@@ -90,6 +97,13 @@ func (filesystem Filesystem) Read(path string) ([]byte, error) {
 
 	if closeErr != nil {
 		return nil, fmt.Errorf("close %s: %w", path, closeErr)
+	}
+
+	truncated := int64(len(data)) > maxBytes
+	if truncated {
+		data = data[:maxBytes]
+
+		return data, fmt.Errorf("read %s: %w", path, ErrTruncated)
 	}
 
 	return data, nil

@@ -10,6 +10,8 @@ import (
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 )
 
+const maxCertificateSize = 1024 * 1024 // 1 MiB
+
 // Identity contains the host UUID and organization ID.
 type Identity struct {
 	UUID  string
@@ -19,7 +21,7 @@ type Identity struct {
 // Read reads a PEM-encoded consumer certificate
 // and extracts its identity.
 func Read(filesystem fs.FS, path string) (Identity, error) {
-	data, err := filesystem.Read(path)
+	data, err := filesystem.Read(path, maxCertificateSize)
 	if err != nil {
 		return Identity{}, fmt.Errorf("read consumer certificate %s: %w", path, err)
 	}

@@ -71,11 +71,15 @@ type virtFS struct {
 
 var _ internalfs.FS = virtFS{}
 
-// Read returns configured test contents or a virtual not-exist error.
-func (filesystem virtFS) Read(path string) ([]byte, error) {
+// Read returns configured test contents up to maxBytes or a virtual not-exist error.
+func (filesystem virtFS) Read(path string, maxBytes int64) ([]byte, error) {
 	data, ok := filesystem.files[path]
 	if !ok {
 		return nil, &iofs.PathError{Op: "read", Path: path, Err: iofs.ErrNotExist}
+	}
+
+	if int64(len(data)) > maxBytes {
+		return append([]byte(nil), data[:maxBytes]...), internalfs.ErrTruncated
 	}
 
 	return append([]byte(nil), data...), nil

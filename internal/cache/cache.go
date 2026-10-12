@@ -1,12 +1,10 @@
 package cache
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
@@ -15,8 +13,7 @@ import (
 
 const (
 	fileMode    = 0o640
-	maxLineSize = 2048
-	maxFileSize = 2048 * 512
+	maxFileSize = 1024 * 1024 // 1 MiB
 )
 
 // Cache reads and writes pending heartbeat records at its injected path.
@@ -31,10 +28,8 @@ func New(filesystem fs.WriteFS, path string) *Cache {
 }
 
 // Read returns the cached heartbeats in file order. A missing file produces an empty slice.
-//
-// The read operation is capped at 2048 bytes per line and at 512 lines.
 func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
-	data, err := cache.readFile()
+	data, err := cache.filesystem.Read(cache.path, maxFileSize)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return []heartbeat.Heartbeat{}, nil
@@ -44,24 +39,22 @@ func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
 	}
 
 	heartbeats := make([]heartbeat.Heartbeat, 0)
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, maxLineSize), maxLineSize)
+	if len(data) == 0 {
+		return heartbeats, nil
+	}
 
-	for scanner.Scan() {
-		if len(scanner.Bytes()) > maxLineSize {
-			return nil, fmt.Errorf("decode heartbeat cache %s: line exceeds %d bytes", cache.path, maxLineSize)
-		}
+	lines := bytes.Split(data, []byte{'\n'})
+	if data[len(data)-1] == '\n' {
+		lines = lines[:len(lines)-1]
+	}
 
+	for _, line := range lines {
 		var hb heartbeat.Heartbeat
-		if err := json.Unmarshal(scanner.Bytes(), &hb); err != nil {
+		if err := json.Unmarshal(line, &hb); err != nil {
 			return nil, fmt.Errorf("decode heartbeat cache %s: %w", cache.path, err)
 		}
 
 		heartbeats = append(heartbeats, hb)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan heartbeat cache %s: %w", cache.path, err)
 	}
 
 	return heartbeats, nil
@@ -75,10 +68,6 @@ func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 		line, err := json.Marshal(hb)
 		if err != nil {
 			return fmt.Errorf("encode heartbeat cache: %w", err)
-		}
-
-		if len(line) > maxLineSize {
-			return fmt.Errorf("encode heartbeat cache: line exceeds %d bytes", maxLineSize)
 		}
 
 		if data.Len()+len(line)+1 > maxFileSize {
@@ -99,42 +88,4 @@ func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 	}
 
 	return nil
-}
-
-// readFile opens the cache and returns its contents up to the configured file-size limit.
-func (cache *Cache) readFile() ([]byte, error) {
-	file, err := cache.filesystem.Open(cache.path)
-	if err != nil {
-		return nil, fmt.Errorf("open cache file %s: %w", cache.path, err)
-	}
-
-	info, err := file.Stat()
-	if err != nil {
-		_ = file.Close()
-
-		return nil, fmt.Errorf("stat cache file: %w", err)
-	}
-
-	if !info.IsRegular {
-		_ = file.Close()
-
-		return nil, fmt.Errorf("cache path %s is not a regular file", cache.path)
-	}
-
-	data, readErr := io.ReadAll(io.LimitReader(file, maxFileSize+1))
-	closeErr := file.Close()
-
-	if readErr != nil {
-		return nil, fmt.Errorf("read cache file: %w", readErr)
-	}
-
-	if closeErr != nil {
-		return nil, fmt.Errorf("close cache file: %w", closeErr)
-	}
-
-	if len(data) > maxFileSize {
-		return nil, fmt.Errorf("cache file exceeds %d bytes", maxFileSize)
-	}
-
-	return data, nil
 }

@@ -19,6 +19,8 @@ import (
 	"golang.org/x/net/http/httpproxy"
 )
 
+const maxCertificateSize = 1024 * 1024 // 1 MiB
+
 // Options contain application-specific values used to configure the Remote Write client.
 type Options struct {
 	Filesystem         fs.FS
@@ -163,12 +165,12 @@ func newTLSConfig(options Options, verify bool) (*tls.Config, error) {
 
 // loadX509KeyPair reimplements tls.LoadX509KeyPair while using the provided filesystem.
 func loadX509KeyPair(filesystem fs.FS, certPath, keyPath string) (tls.Certificate, error) {
-	cert, err := filesystem.Read(certPath)
+	cert, err := filesystem.Read(certPath, maxCertificateSize)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("read certificate: %w", err)
 	}
 
-	key, err := filesystem.Read(keyPath)
+	key, err := filesystem.Read(keyPath, maxCertificateSize)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("read certificate key: %w", err)
 	}
@@ -194,7 +196,7 @@ func loadX509CA(filesystem fs.FS, caPath string) (*x509.CertPool, error) {
 
 	pool := x509.NewCertPool()
 
-	raw, err := filesystem.Read(caPath)
+	raw, err := filesystem.Read(caPath, maxCertificateSize)
 	if err != nil {
 		return nil, fmt.Errorf("read CA certificate %s: %w", caPath, err)
 	}

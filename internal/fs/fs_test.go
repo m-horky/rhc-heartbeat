@@ -9,8 +9,8 @@ import (
 
 // TestFilesystemRead verifies that a regular file's contents are returned.
 //
-// Given a readable regular file, when Filesystem.Read reads its path, then it
-// returns the complete file contents without error.
+// Given a readable regular file within the byte limit, when Filesystem.Read
+// reads its path, then it returns the complete file contents without error.
 func TestFilesystemRead(t *testing.T) {
 	t.Parallel()
 
@@ -22,7 +22,7 @@ func TestFilesystemRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := (Filesystem{}).Read(path)
+	got, err := (Filesystem{}).Read(path, 1024)
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
@@ -40,9 +40,31 @@ func TestFilesystemRead(t *testing.T) {
 func TestErrNotExist(t *testing.T) {
 	t.Parallel()
 
-	_, err := (Filesystem{}).Read(filepath.Join(t.TempDir(), "missing.conf"))
+	_, err := (Filesystem{}).Read(filepath.Join(t.TempDir(), "missing.conf"), 1024)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Read() error = %v, want os.ErrNotExist", err)
+	}
+}
+
+// TestErrTruncated verifies that oversized file contents are bounded.
+//
+// Given a regular file larger than the byte limit, when Filesystem.Read reads
+// it, then it returns only the limit and reports ErrTruncated.
+func TestErrTruncated(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "large.conf")
+	if err := os.WriteFile(path, []byte("12345"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := (Filesystem{}).Read(path, 3)
+	if !errors.Is(err, ErrTruncated) {
+		t.Fatalf("Read() error = %v, want ErrTruncated", err)
+	}
+
+	if string(got) != "123" {
+		t.Fatalf("Read() = %q, want %q", got, "123")
 	}
 }
 

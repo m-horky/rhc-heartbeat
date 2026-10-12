@@ -25,12 +25,13 @@ type Product struct {
 var extPrefix = [9]int{1, 3, 6, 1, 4, 1, 2312, 9, 1} //nolint:gochecknoglobals
 
 const (
-	productIndex  = 9
-	typeIndex     = 10
-	nameSuffix    = 1
-	versionSuffix = 2
-	archSuffix    = 3
-	tagsSuffix    = 4
+	maxCertificateSize = 1024 * 1024 // 1 MiB
+	productIndex       = 9
+	typeIndex          = 10
+	nameSuffix         = 1
+	versionSuffix      = 2
+	archSuffix         = 3
+	tagsSuffix         = 4
 )
 
 // Read reads PEM-encoded product certificates and extracts their metadata.
@@ -54,7 +55,7 @@ func Read(filesystem fs.FS, directories ...string) ([]Product, error) {
 
 			path := filepath.Join(dir, file.Name())
 
-			raw, err := filesystem.Read(path)
+			raw, err := filesystem.Read(path, maxCertificateSize)
 			if err != nil {
 				return nil, fmt.Errorf("read product certificate %s: %w", path, err)
 			}

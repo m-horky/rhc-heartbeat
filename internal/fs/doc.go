@@ -4,11 +4,16 @@
 // the operating system directly. Tests can provide a small fake that
 // implements the same interface.
 //
-// Read opens and validates the file before returning its contents:
+// Read opens the file and returns at most the requested number of bytes.
+// Callers can use errors.Is to detect truncation:
 //
-//	func loadConfig(filesystem fs.FS, path string) ([]byte, error) {
-//	     return filesystem.Read(path)
+//	data, err := filesystem.Read(path, maxFileSize)
+//	if errors.Is(err, fs.ErrTruncated) {
+//		slog.Debug("file truncated", "path", path)
+//	} else if err != nil {
+//		return nil, err
 //	}
+//	return data, nil
 //
 // The File returned by Open is a descriptor-backed read handle and must be
 // closed by the caller.
