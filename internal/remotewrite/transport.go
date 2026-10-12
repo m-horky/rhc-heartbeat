@@ -11,18 +11,12 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/golang/snappy"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 	"golang.org/x/net/http/httpproxy"
-)
-
-const (
-	requestTimeout = 10 * time.Second
-	connectTimeout = 5 * time.Second
 )
 
 // Options contain application-specific values used to configure the Remote Write client.
@@ -46,6 +40,7 @@ type Client struct {
 func New(c config.Config, options Options) (*Client, error) {
 	httpClient, err := newHTTPClient(
 		options,
+		c.HTTP.Timeout,
 		c.Heartbeat.URI.Scheme == "https",
 		c.Heartbeat.TLSVerify,
 		options.Proxy,
@@ -105,11 +100,16 @@ func (client *Client) CloseIdleConnections() {
 }
 
 // newHTTPClient creates an HTTP client with the configured proxy and TLS behavior.
-func newHTTPClient(options Options, useTLS, tlsVerify bool, proxyConfig *httpproxy.Config) (*http.Client, error) {
+func newHTTPClient(
+	options Options,
+	timeout config.Timeout,
+	useTLS, tlsVerify bool,
+	proxyConfig *httpproxy.Config,
+) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
-	transport.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
-	transport.IdleConnTimeout = 30 * time.Second
+	transport.DialContext = (&net.Dialer{Timeout: timeout.Connect}).DialContext
+	transport.IdleConnTimeout = timeout.Idle
 
 	if useTLS {
 		tlsConfig, err := newTLSConfig(options, tlsVerify)
@@ -137,7 +137,7 @@ func newHTTPClient(options Options, useTLS, tlsVerify bool, proxyConfig *httppro
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   requestTimeout,
+		Timeout:   timeout.Request,
 	}, nil
 }
 

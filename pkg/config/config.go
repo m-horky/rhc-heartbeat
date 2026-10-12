@@ -23,6 +23,9 @@ type Endpoint = internalconfig.Endpoint
 // HTTPConfig contains outgoing HTTP transport settings.
 type HTTPConfig = internalconfig.HTTP
 
+// Timeout contains resolved HTTP transport timeouts.
+type Timeout = internalconfig.Timeout
+
 // Proxy describes the HTTP proxy, its credentials, and bypass rules.
 type Proxy = internalconfig.Proxy
 

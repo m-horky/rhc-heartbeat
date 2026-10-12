@@ -135,7 +135,7 @@ func TestProxyBypassRules(t *testing.T) {
 				t.Fatalf("create request: %v", err)
 			}
 
-			client, err := newHTTPClient(Options{}, false, true, &httpproxy.Config{
+			client, err := newHTTPClient(Options{}, config.Timeout{}, false, true, &httpproxy.Config{
 				HTTPProxy:  proxyURI,
 				HTTPSProxy: proxyURI,
 				NoProxy:    test.rules,
