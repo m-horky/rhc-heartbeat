@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/url"
 	"strings"
@@ -155,10 +154,6 @@ func isValidURI(value string) error {
 
 	if parsed.Hostname() == "" {
 		return fmt.Errorf("no hostname")
-	}
-
-	if parsed.Scheme == "http" {
-		slog.Warn("configuration contains insecure HTTP")
 	}
 
 	return nil

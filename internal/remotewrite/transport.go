@@ -124,8 +124,6 @@ func newHTTPClient(
 		if !tlsVerify {
 			slog.Debug("TLS certificate verification is disabled")
 		}
-	} else {
-		slog.Debug("using insecure HTTP")
 	}
 
 	if proxyConfig != nil && (proxyConfig.HTTPProxy != "" || proxyConfig.HTTPSProxy != "") {
