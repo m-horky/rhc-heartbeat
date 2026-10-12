@@ -47,10 +47,10 @@ func TestLatestWithinBoot(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	first := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: time.Second, HostID: "first"}
-	newest := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 3 * time.Second, HostID: "newest"}
-	older := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: "older"}
-	otherBoot := heartbeat.Heartbeat{BootID: "boot-b", TimeMonotonic: time.Second, HostID: "other"}
+	first := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: time.Second, HostID: new("first")}
+	newest := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 3 * time.Second, HostID: new("newest")}
+	older := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: new("older")}
+	otherBoot := heartbeat.Heartbeat{BootID: "boot-b", TimeMonotonic: time.Second, HostID: new("other")}
 
 	loaded.Add(first)
 	loaded.Add(newest)
@@ -62,6 +62,46 @@ func TestLatestWithinBoot(t *testing.T) {
 
 	if !cmp.Equal(got, want) {
 		t.Fatalf("Read() = %#v, want %#v", got, want)
+	}
+}
+
+// TestBindIdentity verifies identity backfilling preserves known fields.
+//
+// Given cached heartbeats with missing or existing identity fields, when BindIdentity runs,
+// then it fills only missing fields and leaves existing identity untouched.
+func TestBindIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
+
+	pending, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	pending.Add(heartbeat.Heartbeat{
+		BootID:     "boot-a",
+		ProductIDs: new([]string{"product-a"}),
+	},
+	)
+	pending.Add(heartbeat.Heartbeat{
+		BootID:        "boot-b",
+		TimeMonotonic: time.Second,
+		HostID:        new("original-host"),
+		HostOrg:       new("original-org"),
+	})
+	pending.Add(heartbeat.Heartbeat{
+		BootID:        "boot-b",
+		TimeMonotonic: 2 * time.Second,
+	},
+	)
+	pending.BindIdentity(consumer.Identity{UUID: "host-a", OrgID: "org-a"})
+
+	want := []heartbeat.Heartbeat{
+		{BootID: "boot-a", HostID: new("host-a"), HostOrg: new("org-a"), ProductIDs: new([]string{"product-a"})},
+		{BootID: "boot-b", TimeMonotonic: 2 * time.Second, HostID: new("original-host"), HostOrg: new("original-org")},
+	}
+	if got := pending.Read(); !cmp.Equal(got, want) {
+		t.Fatalf("Read() after BindIdentity() = %#v, want %#v", got, want)
 	}
 }
 

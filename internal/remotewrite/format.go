@@ -2,6 +2,7 @@ package remotewrite
 
 import (
 	"cmp"
+	"fmt"
 	"hash/fnv"
 	"slices"
 	"strconv"
@@ -37,7 +38,10 @@ func groupHeartbeats(heartbeats []heartbeat.Heartbeat) (map[uint64]*writeSeries,
 	// for that label set. In practice, we will almost always have created
 	// a single series, since the label values are fairly static.
 	for _, hb := range heartbeats {
-		labels := newLabelsFromHeartbeat(hb)
+		labels, err := newLabelsFromHeartbeat(hb)
+		if err != nil {
+			return nil, fmt.Errorf("error formatting heartbeats: %w", err)
+		}
 		key := newKeyFromLabels(labels)
 
 		hbSeries := series[key]
@@ -56,11 +60,19 @@ func groupHeartbeats(heartbeats []heartbeat.Heartbeat) (map[uint64]*writeSeries,
 }
 
 // newLabelsFromHeartbeat returns labels describing one heartbeat.
-func newLabelsFromHeartbeat(hb heartbeat.Heartbeat) []label {
+func newLabelsFromHeartbeat(hb heartbeat.Heartbeat) ([]label, error) {
+	if hb.HostID == nil || *hb.HostID == "" {
+		return nil, fmt.Errorf("missing host_uuid")
+	}
+
+	if hb.HostOrg == nil || *hb.HostOrg == "" {
+		return nil, fmt.Errorf("missing host_org")
+	}
+
 	labels := []label{
 		{name: "__name__", value: "rhc_heartbeat_time_monotonic_seconds"},
-		{name: "system_uuid", value: hb.HostID},
-		{name: "org_id", value: hb.HostOrg},
+		{name: "host_uuid", value: *hb.HostID},
+		{name: "host_org", value: *hb.HostOrg},
 		{name: "boot_id", value: hb.BootID},
 		{name: "kind", value: string(hb.Kind)},
 	}
@@ -91,7 +103,7 @@ func newLabelsFromHeartbeat(hb heartbeat.Heartbeat) []label {
 
 	slices.SortFunc(labels, func(a, b label) int { return cmp.Compare(a.name, b.name) })
 
-	return labels
+	return labels, nil
 }
 
 // newKeyFromLabels returns a static hash for a supplied key=value set.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/m-horky/rhc-heartbeat/pkg/cache"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
+	"github.com/m-horky/rhc-heartbeat/pkg/consumer"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 	"github.com/m-horky/rhc-heartbeat/pkg/lock"
 	"github.com/m-horky/rhc-heartbeat/pkg/upload"
@@ -36,9 +37,9 @@ func execute(args []string) error {
 	return run(ctx, args)
 }
 
-// run collects one heartbeat, configures delivery, uploads it with pending records, and caches failures.
+// run collects a heartbeat, uploads pending records or retains failures.
 func run(ctx context.Context, args []string) error {
-	// Parse input first.
+	// Parse CLI input.
 	kind, err := parseKind(args)
 	if errors.Is(err, flag.ErrHelp) {
 		_, _ = fmt.Fprintln(os.Stdout, "usage: rhc-heartbeat [--kind on|off|ping]")
@@ -69,13 +70,6 @@ func run(ctx context.Context, args []string) error {
 
 	logInsecureTransport(cfg)
 
-	// Initialize Prometheus client.
-	uploader, err := upload.New(cfg)
-	if err != nil {
-		return fmt.Errorf("cannot create Prometheus Remote Write client: %w", err)
-	}
-	defer uploader.CloseIdleConnections()
-
 	// Load past heartbeats.
 	hbCache, err := cache.Load()
 	if err != nil {
@@ -85,17 +79,33 @@ func run(ctx context.Context, args []string) error {
 	// Collect current heartbeat.
 	hb, err := heartbeat.Get(kind)
 	if err != nil {
-		return fmt.Errorf("cannot collect heartbeat: %w", err)
+		return fmt.Errorf("cannot get heartbeat: %w", err)
 	}
-
 	hbCache.Add(hb)
 
-	// Attempt the upload.
-	if err := uploader.Upload(ctx, hbCache.Read()); err == nil {
-		return handleUploadSuccess(hbCache)
-	} else {
-		return handleUploadFailure(hbCache, err)
+	// Read identity.
+	identity, err := consumer.Get()
+	if err != nil {
+		return handleFailure(hbCache, err)
 	}
+
+	// Include identity in current and all past heartbeats without one.
+	hbCache.BindIdentity(identity)
+
+	// Initialize the Prometheus client.
+	uploader, err := upload.New(cfg)
+	if err != nil {
+		return handleFailure(hbCache, err)
+	}
+	defer uploader.CloseIdleConnections()
+
+	// Attempt the upload.
+	if err := uploader.Upload(ctx, hbCache.Read()); err != nil {
+		return handleFailure(hbCache, err)
+	}
+
+	// Clean up.
+	return handleSuccess(hbCache)
 }
 
 // logInsecureTransport warns when Remote Write traffic is not protected by HTTPS verification.
@@ -109,8 +119,8 @@ func logInsecureTransport(cfg config.Config) {
 	}
 }
 
-// handleUploadSuccess clears the heartbeat cache after a successful upload.
-func handleUploadSuccess(hbCache *cache.Cache) error {
+// handleSuccess clears the heartbeat cache after a successful upload.
+func handleSuccess(hbCache *cache.Cache) error {
 	slog.Info("upload complete")
 	hbCache.Clear()
 
@@ -121,12 +131,12 @@ func handleUploadSuccess(hbCache *cache.Cache) error {
 	return nil
 }
 
-// handleUploadFailure saves pending heartbeats and returns the upload error.
-func handleUploadFailure(hbCache *cache.Cache, uploadErr error) error {
-	if err := hbCache.Save(); err == nil {
-		slog.Info("heartbeat cache saved")
-	} else {
-		slog.Warn("cannot save heartbeat cache", "err", err)
+// handleFailure saves pending heartbeats and returns the upload error.
+func handleFailure(hbCache *cache.Cache, uploadErr error) error {
+	if err := hbCache.Save(); err != nil {
+		slog.Error("cannot save heartbeat cache", "err", err)
+
+		return fmt.Errorf("save heartbeat cache: %w", err)
 	}
 
 	return fmt.Errorf("cannot upload heartbeat: %w", uploadErr)

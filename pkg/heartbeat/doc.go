@@ -1,11 +1,9 @@
-// Package heartbeat collects host identity, boot identity, and clock readings into
-// heartbeat records.
+// Package heartbeat collects boot and clock readings, system profile, product
+// information, and consumer identity when available. Missing identity fields do not
+// prevent collection, so callers can cache the heartbeat and resolve identity before upload.
 //
-//	hb, err := heartbeat.Get(heartbeat.KindPing)
-//	if err != nil {
-//		return err
-//	}
-//	if hb.ProductIDs != nil {
-//		fmt.Println(*hb.ProductIDs)
+//	hb, _ := heartbeat.Get(heartbeat.KindPing)
+//	if hb.HostID != nil {
+//		fmt.Println(*hb.HostID)
 //	}
 package heartbeat

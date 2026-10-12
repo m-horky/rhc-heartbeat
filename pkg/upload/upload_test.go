@@ -47,8 +47,8 @@ func TestNewUsesApplicationUserAgent(t *testing.T) {
 	defer client.CloseIdleConnections()
 
 	hb := heartbeat.Heartbeat{
-		HostID:  "host",
-		HostOrg: "org",
+		HostID:  new("host"),
+		HostOrg: new("org"),
 		BootID:  "boot",
 		Kind:    heartbeat.KindPing,
 	}

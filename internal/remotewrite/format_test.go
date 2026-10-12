@@ -11,20 +11,20 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-// TestEncodeHeartbeatsProducesSortedRemoteWriteSeries verifies the Remote Write v1 protobuf schema.
+// TestSeriesAreSortedAndChronological verifies the Remote Write v1 protobuf schema.
 //
-// Given heartbeat events sharing labels, when encoding runs, then it groups samples with sorted labels
-// and Unix-millisecond timestamps.
-func TestEncodeHeartbeatsProducesSortedRemoteWriteSeries(t *testing.T) {
+// Given heartbeat events sharing labels, when encoding runs, then it groups
+// samples with sorted labels and Unix-millisecond timestamps.
+func TestSeriesAreSortedAndChronological(t *testing.T) {
 	t.Parallel()
 
 	heartbeats := []heartbeat.Heartbeat{
 		{
-			HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing,
+			HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindPing,
 			TimeMonotonic: 3*time.Second + 500*time.Millisecond, TimeUnix: time.Unix(1700000001, 123456789),
 		},
 		{
-			HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing,
+			HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindPing,
 			TimeMonotonic: 2*time.Second + 500*time.Millisecond, TimeUnix: time.Unix(1700000000, 987654321),
 		},
 	}
@@ -51,15 +51,15 @@ func TestEncodeHeartbeatsProducesSortedRemoteWriteSeries(t *testing.T) {
 	assertEncodedSamples(t, schema, series)
 }
 
-// TestEncodeHeartbeatsEmitsExtendedPayloadLabels verifies optional profile data reaches the Remote Write labels.
+// TestPayloadAsLabels verifies system profile reaches the Remote Write labels.
 //
-// Given a heartbeat with marketplace, CPU, and product details, when encoded, then those details are labeled
-// and ID lists use comma-separated values.
-func TestEncodeHeartbeatsEmitsExtendedPayloadLabels(t *testing.T) {
+// Given a heartbeat with marketplace, CPU, and product details, when encoded,
+// then those details are labeled and ID lists use comma-separated values.
+func TestPayloadAsLabels(t *testing.T) {
 	t.Parallel()
 
 	payload, err := encodeHeartbeats([]heartbeat.Heartbeat{{
-		HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindPing,
+		HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindPing,
 		MarketplaceID: new("aws"), MarketplaceAccountID: new("account"), MarketplaceInstanceID: new("instance"),
 		MarketplaceOfferIDs: new([]string{"offer-a", "offer-b"}), VCPUCount: new(uint64(16)),
 		ProductIDs: new([]string{"product-a", "product-b"}),
@@ -99,12 +99,11 @@ func TestEncodeHeartbeatsEmitsExtendedPayloadLabels(t *testing.T) {
 	}
 }
 
-// TestEncodeHeartbeatsEmitsSupportedKindLabels verifies each heartbeat enum reaches the Remote Write label unchanged.
+// TestEncodeHeartbeats verifies each heartbeat enum reaches the Remote Write label unchanged.
 //
-// Given heartbeats with each supported kind
-// When they are encoded
-// Then each emitted kind label matches its enum value exactly.
-func TestEncodeHeartbeatsEmitsSupportedKindLabels(t *testing.T) {
+// Given heartbeats with each supported kind, when they are encoded
+// then each emitted kind label matches its enum value exactly.
+func TestEncodeHeartbeats(t *testing.T) {
 	t.Parallel()
 
 	for _, kind := range []heartbeat.Kind{heartbeat.KindOn, heartbeat.KindOff, heartbeat.KindPing} {
@@ -112,7 +111,7 @@ func TestEncodeHeartbeatsEmitsSupportedKindLabels(t *testing.T) {
 			t.Parallel()
 
 			payload, err := encodeHeartbeats([]heartbeat.Heartbeat{{
-				HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: kind,
+				HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: kind,
 			}})
 			if err != nil {
 				t.Fatalf("encodeHeartbeats() error = %v", err)
@@ -161,11 +160,11 @@ func assertEncodedLabels(
 	}
 
 	for name, want := range map[string]string{
-		"__name__":    "rhc_heartbeat_time_monotonic_seconds",
-		"org_id":      "org",
-		"system_uuid": "uuid",
-		"boot_id":     "boot",
-		"kind":        string(kind),
+		"__name__":  "rhc_heartbeat_time_monotonic_seconds",
+		"host_org":  "org",
+		"host_uuid": "uuid",
+		"boot_id":   "boot",
+		"kind":      string(kind),
 	} {
 		if labelValues[name] != want {
 			t.Errorf("label %q = %q, want %q", name, labelValues[name], want)
@@ -204,6 +203,37 @@ func assertEncodedSamples(t *testing.T, schema remoteWriteDescriptors, series pr
 	}
 }
 
+// TestEncodeRequiresIdentity verifies identity labels are mandatory at formatting time.
+//
+// Identity is required to make the upload. Something is wrong if the code got this far.
+// Prefer failing fast, so the issue surfaces during testing and not at production.
+//
+// Given a heartbeat with missing or empty identity fields, when it is encoded,
+// then encoding returns an error instead of emitting incomplete series labels.
+func TestEncodeRequiresIdentity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		hb   heartbeat.Heartbeat
+	}{
+		{name: "missing UUID", hb: heartbeat.Heartbeat{HostOrg: new("org")}},
+		{name: "empty UUID", hb: heartbeat.Heartbeat{HostID: new(""), HostOrg: new("org")}},
+		{name: "missing organization", hb: heartbeat.Heartbeat{HostID: new("uuid")}},
+		{name: "empty organization", hb: heartbeat.Heartbeat{HostID: new("uuid"), HostOrg: new("")}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := encodeHeartbeats([]heartbeat.Heartbeat{test.hb}); err == nil {
+				t.Fatal("encodeHeartbeats() succeeded without complete identity")
+			}
+		})
+	}
+}
+
 // TestSnappyPayloadUsesBlockEncoding verifies the Snappy block compressor accepts the protobuf bytes.
 //
 // Given an encoded Remote Write request, when block compression runs, then the payload decodes
@@ -211,7 +241,7 @@ func assertEncodedSamples(t *testing.T, schema remoteWriteDescriptors, series pr
 func TestSnappyPayloadUsesBlockEncoding(t *testing.T) {
 	t.Parallel()
 
-	hb := heartbeat.Heartbeat{HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindOff}
+	hb := heartbeat.Heartbeat{HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindOff}
 
 	payload, err := encodeHeartbeats([]heartbeat.Heartbeat{hb})
 	if err != nil {

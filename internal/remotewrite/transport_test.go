@@ -81,7 +81,7 @@ func TestHeadersBody(t *testing.T) {
 	}
 	defer client.CloseIdleConnections()
 
-	hb := heartbeat.Heartbeat{HostID: "uuid", HostOrg: "org", BootID: "boot", Kind: heartbeat.KindOff}
+	hb := heartbeat.Heartbeat{HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindOff}
 	if err := client.Upload(context.Background(), []heartbeat.Heartbeat{hb}); err != nil {
 		t.Fatalf("Upload() error = %v", err)
 	}
