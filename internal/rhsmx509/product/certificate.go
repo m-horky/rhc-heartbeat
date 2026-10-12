@@ -4,7 +4,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,6 +40,10 @@ func Read(filesystem fs.FS, directories ...string) ([]Product, error) {
 	for _, dir := range directories {
 		files, err := filesystem.ReadDir(dir)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
 			return nil, fmt.Errorf("read product certificates in %s: %w", dir, err)
 		}
 
