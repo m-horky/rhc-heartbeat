@@ -1,10 +1,10 @@
-// Package product lists product IDs from Red Hat product certificates.
+// Package product reads product metadata from Red Hat product certificates.
 //
-// ListIDs reads certificate directories through an injected filesystem, making
-// certificate discovery independent of direct operating-system calls. Missing
-// directories are ignored; other filesystem and certificate errors are returned.
+// Read accepts an injected filesystem and certificate directories, and returns
+// Product values. Missing directories are ignored; other filesystem and
+// certificate errors are returned.
 //
-//	ids, err := product.ListIDs(
+//	products, err := product.Read(
 //		fs.Filesystem{},
 //		"/etc/pki/product-default",
 //		"/etc/pki/product",
@@ -12,5 +12,7 @@
 //	if err != nil {
 //		return err
 //	}
-//	_ = ids
+//	for _, p := range products {
+//		fmt.Println(p.ID, p.Name)
+//	}
 package product

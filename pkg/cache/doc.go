@@ -1,13 +1,12 @@
 // Package cache provides filesystem-backed storage for pending heartbeats.
 //
-// Load reads the cache file into memory. If the file does not exist, it returns
-// an empty cache. Add and Clear are in-memory operations: call Save to persist them.
-// Cache methods are not thread-safe.
+// Load reads the cache from the system's configured path. A missing cache file
+// produces an empty cache. Add and Clear change the in-memory cache; call Save to
+// persist those changes. Cache methods are not thread-safe, so callers must
+// serialize access. For each boot ID, the cache keeps the heartbeat with the
+// greatest monotonic time.
 //
-// The cache only keeps the latest heartbeat for each boot ID.
-//
-//	hb := heartbeat.Heartbeat{}
-//	pending, err := cache.Load("/var/lib/rhc/heartbeat.jsonl")
+//	pending, err := cache.Load()
 //	if err != nil {
 //	    return err
 //	}
