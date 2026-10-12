@@ -47,9 +47,10 @@ func TestLatestWithinBoot(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	first := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: time.Second, HostID: new("first")}
-	newest := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 3 * time.Second, HostID: new("newest")}
-	older := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: new("older")}
+	hostID := "host-a"
+	first := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: time.Second, HostID: &hostID}
+	newest := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 3 * time.Second, HostID: &hostID}
+	older := heartbeat.Heartbeat{BootID: "boot-a", TimeMonotonic: 2 * time.Second, HostID: &hostID}
 	otherBoot := heartbeat.Heartbeat{BootID: "boot-b", TimeMonotonic: time.Second, HostID: new("other")}
 
 	loaded.Add(first)
@@ -62,6 +63,78 @@ func TestLatestWithinBoot(t *testing.T) {
 
 	if !cmp.Equal(got, want) {
 		t.Fatalf("Read() = %#v, want %#v", got, want)
+	}
+}
+
+// identityMergeCase describes the identity and ordering inputs for a cache merge test.
+type identityMergeCase struct {
+	name          string
+	firstHostID   *string
+	nextHostID    *string
+	nextTime      time.Duration
+	wantHostID    *string
+	wantHeartbeat int
+}
+
+// TestDeduplication verifies that missing cached identities can be filled by new heartbeats.
+//
+// Given two heartbeats with the same boot ID and any pair of missing or present host IDs,
+// when both heartbeats are added, then they merge if the cached ID is missing or both IDs match.
+func TestDeduplication(t *testing.T) {
+	tests := []identityMergeCase{
+		{name: "both nil", wantHeartbeat: 1},
+		{name: "nil then empty", nextHostID: new(""), wantHeartbeat: 1},
+		{name: "empty then nil", firstHostID: new(""), wantHeartbeat: 1},
+		{name: "both empty", firstHostID: new(""), nextHostID: new(""), wantHeartbeat: 1},
+		{name: "nil then present", nextHostID: new("host-a"), wantHostID: new("host-a"), wantHeartbeat: 1},
+		{name: "present then nil", firstHostID: new("host-a"), wantHeartbeat: 2},
+		{
+			name:          "empty then present",
+			firstHostID:   new(""),
+			nextHostID:    new("host-a"),
+			wantHostID:    new("host-a"),
+			wantHeartbeat: 1,
+		},
+		{name: "present then empty", firstHostID: new("host-a"), nextHostID: new(""), wantHeartbeat: 2},
+		{name: "same present ID", firstHostID: new("host-a"), nextHostID: new("host-a"), wantHeartbeat: 1},
+		{name: "different present IDs", firstHostID: new("host-a"), nextHostID: new("host-b"), wantHeartbeat: 2},
+		{
+			name:          "new UUID fills older heartbeat",
+			nextHostID:    new("host-a"),
+			nextTime:      time.Millisecond,
+			wantHostID:    new("host-a"),
+			wantHeartbeat: 1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pending := &Cache{}
+			pending.Add(heartbeat.Heartbeat{
+				BootID:        "boot-a",
+				TimeMonotonic: time.Second,
+				HostID:        test.firstHostID,
+			})
+
+			if test.nextTime == 0 {
+				test.nextTime = 2 * time.Second
+			}
+
+			pending.Add(heartbeat.Heartbeat{
+				BootID:        "boot-a",
+				TimeMonotonic: test.nextTime,
+				HostID:        test.nextHostID,
+			})
+
+			got := pending.Read()
+			if len(got) != test.wantHeartbeat {
+				t.Fatalf("Read() has %d heartbeats, want %d", len(got), test.wantHeartbeat)
+			}
+
+			if test.wantHostID != nil && (got[0].HostID == nil || *got[0].HostID != *test.wantHostID) {
+				t.Fatalf("Read()[0].HostID = %v, want %q", got[0].HostID, *test.wantHostID)
+			}
+		})
 	}
 }
 
@@ -98,7 +171,8 @@ func TestBindIdentity(t *testing.T) {
 
 	want := []heartbeat.Heartbeat{
 		{BootID: "boot-a", HostID: new("host-a"), HostOrg: new("org-a"), ProductIDs: new([]string{"product-a"})},
-		{BootID: "boot-b", TimeMonotonic: 2 * time.Second, HostID: new("original-host"), HostOrg: new("original-org")},
+		{BootID: "boot-b", TimeMonotonic: time.Second, HostID: new("original-host"), HostOrg: new("original-org")},
+		{BootID: "boot-b", TimeMonotonic: 2 * time.Second, HostID: new("host-a"), HostOrg: new("org-a")},
 	}
 	if got := pending.Read(); !cmp.Equal(got, want) {
 		t.Fatalf("Read() after BindIdentity() = %#v, want %#v", got, want)

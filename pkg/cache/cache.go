@@ -12,7 +12,7 @@ import (
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 )
 
-// Cache stores the newest pending heartbeat for each boot ID in memory.
+// Cache stores the newest pending heartbeat in memory for each boot ID and host UUID.
 // Callers must serialize access to its methods.
 type Cache struct {
 	implementation *internalcache.Cache
@@ -45,10 +45,21 @@ func (cache *Cache) Read() []heartbeat.Heartbeat {
 	return append([]heartbeat.Heartbeat{}, cache.heartbeats...)
 }
 
-// Add adds a heartbeat or replaces its boot ID's value when its monotonic time is newer.
+// Add adds a heartbeat, merging records with the same boot ID
+// when the existing host UUID is missing or both host UUIDs match.
 func (cache *Cache) Add(hb heartbeat.Heartbeat) {
 	for i, existing := range cache.heartbeats {
 		if existing.BootID != hb.BootID {
+			continue
+		}
+
+		// Merge when the cached UUID is missing or both UUIDs match.
+		// A UUID on the new heartbeat fills a missing cached UUID.
+		existingHostIDMissing := existing.HostID == nil || *existing.HostID == ""
+
+		heartbeatHostIDMissing := hb.HostID == nil || *hb.HostID == ""
+		if !existingHostIDMissing &&
+			(heartbeatHostIDMissing || *existing.HostID != *hb.HostID) {
 			continue
 		}
 
@@ -69,6 +80,8 @@ func (cache *Cache) Add(hb heartbeat.Heartbeat) {
 			if replaced {
 				slog.Debug("updated heartbeat host", "boot-id", hb.BootID)
 			}
+		} else if existingHostIDMissing && !heartbeatHostIDMissing {
+			cache.heartbeats[i].HostID = hb.HostID
 		}
 
 		sortHeartbeats(cache.heartbeats)
