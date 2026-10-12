@@ -1,7 +1,6 @@
 package profile
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -37,18 +36,10 @@ func Get() (Profile, error) {
 
 	profile := Profile{}
 
-	vCPU, err := newCPUProfile(facts)
-	if err != nil {
-		slog.Warn("cannot extract vCPU count", "err", err)
-	}
+	cpu := newCPUProfile(facts)
+	marketplace := newMarketplaceProfile(facts)
 
-	profile.VCPUCount = vCPU.VCPUCount
-
-	marketplace, err := newMarketplaceProfile(facts)
-	if err != nil {
-		slog.Debug("cannot extract marketplace profile", "err", err)
-	}
-
+	profile.VCPUCount = cpu.VCPUCount
 	profile.ID = marketplace.ID
 	profile.Instance = marketplace.Instance
 	profile.Account = marketplace.Account
@@ -58,23 +49,27 @@ func Get() (Profile, error) {
 }
 
 // newCPUProfile reads logical CPU count from subscription-manager facts output.
-func newCPUProfile(facts map[string]string) (*cpuProfile, error) {
+func newCPUProfile(facts map[string]string) cpuProfile {
 	raw, ok := facts["lscpu.cpu(s)"]
 	if !ok {
-		return nil, errors.New("lscpu.cpu(s) absent")
+		slog.Warn("cannot extract vCPU count", "err", "lscpu.cpu(s) absent")
+
+		return cpuProfile{VCPUCount: nil}
 	}
 
 	count, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parse lscpu.cpu(s): %w", err)
+		slog.Warn("cannot extract vCPU count", "err", err)
+
+		return cpuProfile{VCPUCount: nil}
 	}
 
-	return &cpuProfile{VCPUCount: &count}, nil
+	return cpuProfile{VCPUCount: &count}
 }
 
 // newMarketplaceProfile derives system profile fields from subscription-manager facts.
-func newMarketplaceProfile(facts map[string]string) (*marketplaceProfile, error) {
-	profile := &marketplaceProfile{}
+func newMarketplaceProfile(facts map[string]string) marketplaceProfile {
+	profile := marketplaceProfile{}
 
 	var (
 		id       string
@@ -131,5 +126,5 @@ func newMarketplaceProfile(facts map[string]string) (*marketplaceProfile, error)
 		profile.Offers = &offersList
 	}
 
-	return profile, nil
+	return profile
 }
