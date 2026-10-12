@@ -21,5 +21,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 The following points are known and expected features, and should not be considered security findings.
 
 - TLS verification and HTTP-only connections can be set in configuration. They are meant to be used for development and on trusted networks.
+- Application traffic can follow redirects. The primary endpoint is configured through the configuration file, which is not attacker-controllable.
 - Paths read by the program can be configured with environment variables, which are not attacker-controllable. Customizable paths are only supported for development and testing.
 - `make server` starts a development-only Prometheus receiver and is not included in product packages.

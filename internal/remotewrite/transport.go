@@ -17,6 +17,7 @@ import (
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/pkg/config"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (
@@ -31,7 +32,7 @@ type Options struct {
 	CertificatePath    string
 	CertificateKeyPath string
 	UserAgent          string
-	Insecure           bool
+	Proxy              *httpproxy.Config
 }
 
 // Client sends heartbeat batches to a Prometheus Remote Write v1 endpoint.
@@ -43,7 +44,12 @@ type Client struct {
 
 // New constructs a Remote Write client using resolved heartbeat configuration and supplied options.
 func New(c config.Config, options Options) (*Client, error) {
-	httpClient, err := newHTTPClient(options, c.Heartbeat.TLSVerify, &c.HTTP.Proxy.URI)
+	httpClient, err := newHTTPClient(
+		options,
+		c.Heartbeat.URI.Scheme == "https",
+		c.Heartbeat.TLSVerify,
+		options.Proxy,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -98,27 +104,35 @@ func (client *Client) CloseIdleConnections() {
 	}
 }
 
-// newHTTPClient creates a configured HTTP client.
-func newHTTPClient(options Options, tls bool, proxy *url.URL) (*http.Client, error) {
+// newHTTPClient creates an HTTP client with the configured proxy and TLS behavior.
+func newHTTPClient(options Options, useTLS, tlsVerify bool, proxyConfig *httpproxy.Config) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = (&net.Dialer{Timeout: connectTimeout}).DialContext
 	transport.IdleConnTimeout = 30 * time.Second
 
-	if tls {
-		tlsConfig, err := newTLSConfig(options)
+	if useTLS {
+		tlsConfig, err := newTLSConfig(options, tlsVerify)
 		if err != nil {
 			return nil, err
 		}
 
 		transport.TLSClientConfig = tlsConfig
+
+		if !tlsVerify {
+			slog.Debug("TLS certificate verification is disabled")
+		}
 	} else {
-		slog.Debug("using insecure HTTP transport")
+		slog.Debug("using insecure HTTP")
 	}
 
-	if proxy != nil && proxy.String() != "" {
-		transport.Proxy = http.ProxyURL(proxy)
-		slog.Debug("using proxy", "proxy", proxy.Redacted())
+	if proxyConfig != nil && (proxyConfig.HTTPProxy != "" || proxyConfig.HTTPSProxy != "") {
+		selectProxy := proxyConfig.ProxyFunc()
+		transport.Proxy = func(request *http.Request) (*url.URL, error) {
+			return selectProxy(request.URL)
+		}
+
+		slog.Debug("using proxy")
 	}
 
 	return &http.Client{
@@ -128,7 +142,7 @@ func newHTTPClient(options Options, tls bool, proxy *url.URL) (*http.Client, err
 }
 
 // newTLSConfig creates the endpoint TLS configuration, including configured certificate verification.
-func newTLSConfig(options Options) (*tls.Config, error) {
+func newTLSConfig(options Options, verify bool) (*tls.Config, error) {
 	certificate, err := loadX509KeyPair(options.Filesystem, options.CertificatePath, options.CertificateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load Remote Write client certificate: %w", err)
@@ -143,7 +157,7 @@ func newTLSConfig(options Options) (*tls.Config, error) {
 		MinVersion:         tls.VersionTLS12,
 		Certificates:       []tls.Certificate{certificate},
 		RootCAs:            rootCAs,
-		InsecureSkipVerify: options.Insecure, //nolint:gosec // Configurable for development purposes.
+		InsecureSkipVerify: !verify, //nolint:gosec // Configurable for development purposes.
 	}, nil
 }
 

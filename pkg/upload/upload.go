@@ -11,6 +11,7 @@ import (
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 	"github.com/m-horky/rhc-heartbeat/pkg/heartbeat"
 	"github.com/m-horky/rhc-heartbeat/pkg/version"
+	"golang.org/x/net/http/httpproxy"
 )
 
 // Client uploads heartbeat batches using the resolved application defaults.
@@ -20,13 +21,20 @@ type Client struct {
 
 // New constructs a Remote Write client using configuration and certificate path overrides.
 func New(cfg config.Config) (*Client, error) {
+	proxyURI := cfg.HTTP.Proxy.URI.String()
+	proxyConfig := &httpproxy.Config{
+		HTTPProxy:  proxyURI,
+		HTTPSProxy: proxyURI,
+		NoProxy:    cfg.HTTP.Proxy.NoProxy,
+	}
+
 	options := internalremotewrite.Options{
 		Filesystem:         fs.Filesystem{},
 		CACertificatePath:  cfg.Heartbeat.CAPath,
 		CertificatePath:    constants.Path(constants.IdentityCertPath),
 		CertificateKeyPath: constants.Path(constants.IdentityKeyPath),
 		UserAgent:          "rhc-heartbeat/" + version.Version,
-		Insecure:           !cfg.Heartbeat.TLSVerify,
+		Proxy:              proxyConfig,
 	}
 
 	implementation, err := internalremotewrite.New(cfg, options)
