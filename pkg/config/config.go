@@ -49,8 +49,8 @@ func Get() (Config, error) {
 		proxyCredentialLogValue = "..."
 	}
 
-	slog.Debug("resolved heartbeat configuration",
-		"heartbeat.uri", cfg.Heartbeat.URI.String(),
+	slog.Debug("resolved configuration",
+		"heartbeat.uri", safeURL(cfg.Heartbeat.URI),
 		"heartbeat.tls_verify", cfg.Heartbeat.TLSVerify,
 		"heartbeat.ca_path", cfg.Heartbeat.CAPath,
 		"http.proxy.uri", safeURL(cfg.HTTP.Proxy.URI),
@@ -61,9 +61,13 @@ func Get() (Config, error) {
 	return cfg, nil
 }
 
-// safeURL returns a URL without user information for diagnostics.
+// safeURL returns a URL without user information or query secrets for diagnostics.
 func safeURL(value url.URL) string {
 	value.User = nil
+	value.RawQuery = ""
+	value.ForceQuery = false
+	value.Fragment = ""
+	value.RawFragment = ""
 
-	return value.String()
+	return value.Redacted()
 }
