@@ -3,6 +3,7 @@ package heartbeat
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -47,27 +48,27 @@ func Get(_ context.Context, kind Kind) (Heartbeat, error) {
 	// Collect "optional" system profile.
 	systemProfile, err := profile.Get()
 	if err != nil {
-		return Heartbeat{}, fmt.Errorf("collect system profile: %w", err)
+		slog.Warn("cannot read heartbeat system profile", "err", err)
+	} else {
+		hb.MarketplaceID = systemProfile.ID
+		hb.MarketplaceAccountID = systemProfile.Account
+		hb.MarketplaceInstanceID = systemProfile.Instance
+		hb.MarketplaceOfferIDs = systemProfile.Offers
+		hb.VCPUCount = systemProfile.VCPUCount
 	}
-
-	hb.MarketplaceID = systemProfile.ID
-	hb.MarketplaceAccountID = systemProfile.Account
-	hb.MarketplaceInstanceID = systemProfile.Instance
-	hb.MarketplaceOfferIDs = systemProfile.Offers
-	hb.VCPUCount = systemProfile.VCPUCount
 
 	// Collect "optional" system products.
 	products, err := product.Get()
 	if err != nil {
-		return Heartbeat{}, fmt.Errorf("collect system products: %w", err)
-	}
+		slog.Warn("cannot read heartbeat product IDs", "err", err)
+	} else {
+		var productIDs []string
+		for _, p := range products {
+			productIDs = append(productIDs, strconv.Itoa(p.ID))
+		}
 
-	var productIDs []string
-	for _, p := range products {
-		productIDs = append(productIDs, strconv.Itoa(p.ID))
+		hb.ProductIDs = &productIDs
 	}
-
-	hb.ProductIDs = &productIDs
 
 	return hb, nil
 }
