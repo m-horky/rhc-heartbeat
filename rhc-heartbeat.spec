@@ -94,6 +94,7 @@ install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_u
 %{_unitdir}/rhc-heartbeat.service
 %{_unitdir}/rhc-heartbeat-sleep.service
 %{_unitdir}/rhc-heartbeat-off.service
+%{_unitdir}/rhc-heartbeat-on.service
 # Documentation
 %license LICENSE
 %doc README.md SECURITY.md

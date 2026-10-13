@@ -1,7 +1,5 @@
 [Unit]
 Description=Send a system heartbeat
-ConditionPathExists=/etc/pki/consumer/cert.pem
-ConditionPathExists=/etc/pki/consumer/key.pem
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=5min
