@@ -52,9 +52,9 @@ done
 %go_vendor_license_install -c %{S:2}
 %endif
 
-# Binaries
-install -m 0755 -vd                     %{buildroot}%{_bindir}
-install -m 0755 -vp %{gobuilddir}/bin/* %{buildroot}%{_bindir}/
+# Main command and subcommands
+install -m 0755 -vd                     %{buildroot}%{_libexecdir}/rhc/
+install -m 0755 -vp %{gobuilddir}/bin/rhc-heartbeat %{buildroot}%{_libexecdir}/rhc/heartbeat
 
 # Configuration
 install -m 0755 -vd                     %{buildroot}%{_prefix}/lib/rhc/
@@ -83,7 +83,8 @@ install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_u
 
 %files %{extra_files}
 # Binaries
-%{_bindir}/rhc-heartbeat
+%dir %{_libexecdir}/rhc/
+%{_libexecdir}/rhc/heartbeat
 # Runtime and configuration directories
 %dir %{_prefix}/lib/rhc/
 %dir %{_sysconfdir}/rhc/

@@ -42,6 +42,7 @@ func groupHeartbeats(heartbeats []heartbeat.Heartbeat) (map[uint64]*writeSeries,
 		if err != nil {
 			return nil, fmt.Errorf("error formatting heartbeats: %w", err)
 		}
+
 		key := newKeyFromLabels(labels)
 
 		hbSeries := series[key]

@@ -1,12 +1,12 @@
-package main
+package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	heartbeatconfig "github.com/m-horky/rhc-heartbeat/pkg/config"
 )
 
@@ -24,7 +24,7 @@ func mustParseURL(t *testing.T, value string) url.URL {
 
 // TestConfigurationOutputRedactsProxyCredentials verifies serialized configuration does not expose proxy secrets.
 //
-// Given a resolved configuration with proxy credentials, when redacting and encoding it,
+// Given a resolved configuration with proxy credentials, when redacting and encoding it as JSON,
 // then the output contains redaction markers instead of the original credentials.
 func TestConfigurationOutputRedactsProxyCredentials(t *testing.T) {
 	t.Parallel()
@@ -40,11 +40,19 @@ func TestConfigurationOutputRedactsProxyCredentials(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := toml.NewEncoder(&output).Encode(redactProxyCredentials(cfg)); err != nil {
+
+	encoder := json.NewEncoder(&output)
+	encoder.SetIndent("", "  ")
+
+	if err := encoder.Encode(redactProxyCredentials(cfg)); err != nil {
 		t.Fatalf("encode redacted configuration: %v", err)
 	}
 
 	encoded := output.String()
+	if !json.Valid(output.Bytes()) {
+		t.Fatalf("configuration output is not valid JSON: %q", encoded)
+	}
+
 	for _, secret := range []string{"private-user", "private-password"} {
 		if strings.Contains(encoded, secret) {
 			t.Errorf("configuration output contains secret %q", secret)

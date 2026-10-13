@@ -13,8 +13,8 @@ Type=oneshot
 User=root
 RemainAfterExit=yes
 StateDirectory=rhc
-ExecStart=/usr/bin/rhc-heartbeat --kind=off
-ExecStop=/usr/bin/rhc-heartbeat --kind=on
+ExecStart=/usr/libexec/rhc/heartbeat run --kind=off
+ExecStop=/usr/libexec/rhc/heartbeat run --kind=on
 TimeoutStartSec=10s
 TimeoutStopSec=10s
 

@@ -11,7 +11,7 @@ StartLimitBurst=4
 Type=oneshot
 User=root
 StateDirectory=rhc
-ExecStart=/usr/bin/rhc-heartbeat --kind=ping
+ExecStart=/usr/libexec/rhc/heartbeat run --kind=ping
 TimeoutStartSec=10s
 Restart=on-failure
 RestartSec=60s

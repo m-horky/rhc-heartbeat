@@ -2,87 +2,55 @@ package main
 
 import (
 	"bytes"
-	"log/slog"
-	"net/url"
+	"context"
 	"strings"
 	"testing"
-
-	"github.com/m-horky/rhc-heartbeat/pkg/config"
 )
 
-// parseTestURL parses an endpoint used by a runtime warning test.
-func parseTestURL(t *testing.T, value string) url.URL {
-	t.Helper()
+// TestPrintHelpListsCommandsAndFlags verifies generated help describes all commands and flags.
+//
+// Given the command definitions, when help is generated, then the available commands and flags are listed.
+func TestPrintHelpListsCommandsAndFlags(t *testing.T) {
+	t.Parallel()
 
-	parsed, err := url.Parse(value)
-	if err != nil {
-		t.Fatalf("parse test URL: %v", err)
+	var output bytes.Buffer
+	if err := printHelp(&output); err != nil {
+		t.Fatalf("printHelp() error = %v", err)
 	}
 
-	return *parsed
+	for _, expected := range []string{"Usage: heartbeat", "run", "config", "profile", "-kind", "ping"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Errorf("generated help = %q, want it to contain %q", output.String(), expected)
+		}
+	}
 }
 
-// TestWarnInsecureRemoteWriteTransport verifies warnings for unencrypted or unverified endpoints.
+// TestRunRequiresExplicitSubcommand verifies command-line options do not implicitly start heartbeat processing.
 //
-// Given endpoint transport settings, when the runtime warning check runs, then it warns only for
-// enabled insecure transport modes.
-func TestWarnInsecureRemoteWriteTransport(t *testing.T) {
-	var output bytes.Buffer
+// Given run options without the run subcommand, when the command is dispatched,
+// then it returns an unknown-command error.
+func TestRunRequiresExplicitSubcommand(t *testing.T) {
+	t.Parallel()
 
-	previousLogger := slog.Default()
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
-
-	tests := []struct {
-		name        string
-		endpoint    string
-		tlsVerify   bool
-		wantWarning string
-		absent      string
-	}{
-		{
-			name:        "plain HTTP",
-			endpoint:    "http://receiver.example.com/write",
-			tlsVerify:   true,
-			wantWarning: "plain HTTP; heartbeat data is not encrypted",
-		},
-		{
-			name:        "HTTPS without certificate verification",
-			endpoint:    "https://receiver.example.com/write",
-			wantWarning: "TLS certificate verification is disabled",
-		},
-		{
-			name:        "HTTP TLS setting is irrelevant",
-			endpoint:    "http://receiver.example.com/write",
-			wantWarning: "plain HTTP; heartbeat data is not encrypted",
-			absent:      "TLS certificate verification is disabled",
-		},
-		{
-			name:      "verified HTTPS",
-			endpoint:  "https://receiver.example.com/write",
-			tlsVerify: true,
-		},
+	err := run(context.Background(), []string{"--kind=ping"})
+	if err == nil || !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatalf("run() error = %v, want an unknown-subcommand error", err)
 	}
+}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			output.Reset()
-			logInsecureTransport(config.Config{
-				Heartbeat: config.Endpoint{URI: parseTestURL(t, test.endpoint), TLSVerify: test.tlsVerify},
-			})
+// TestInspectionSubcommandsRejectArguments verifies config and profile accept no positional arguments.
+//
+// Given an inspection subcommand with extra arguments, when command dispatch runs, then it returns a validation error.
+func TestInspectionSubcommandsRejectArguments(t *testing.T) {
+	t.Parallel()
 
-			got := output.String()
-			if test.wantWarning != "" && !strings.Contains(got, test.wantWarning) {
-				t.Errorf("warning output = %q, want it to contain %q", got, test.wantWarning)
-			}
+	for _, subcommand := range []string{"config", "profile"} {
+		t.Run(subcommand, func(t *testing.T) {
+			t.Parallel()
 
-			if test.absent != "" && strings.Contains(got, test.absent) {
-				t.Errorf("warning output = %q, want it not to contain %q", got, test.absent)
-			}
-
-			if test.wantWarning == "" && got != "" {
-				t.Errorf("warning output = %q, want no warning", got)
+			err := run(context.Background(), []string{subcommand, "unexpected"})
+			if err == nil || !strings.Contains(err.Error(), "does not accept arguments") {
+				t.Fatalf("run() error = %v, want an argument validation error", err)
 			}
 		})
 	}

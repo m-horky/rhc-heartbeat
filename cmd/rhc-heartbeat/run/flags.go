@@ -1,4 +1,4 @@
-package main
+package run
 
 import (
 	"flag"
@@ -11,7 +11,7 @@ import (
 
 // parseKind parses and validates the heartbeat kind supplied on the command line.
 func parseKind(args []string) (heartbeat.Kind, error) {
-	flags := flag.NewFlagSet("rhc-heartbeat", flag.ContinueOnError)
+	flags := flag.NewFlagSet("heartbeat run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	kindValue := flags.String("kind", string(heartbeat.KindPing), "kind of heartbeat to collect")
 

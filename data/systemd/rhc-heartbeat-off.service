@@ -11,7 +11,7 @@ After=network-online.target
 Type=oneshot
 User=root
 StateDirectory=rhc
-ExecStart=/usr/bin/rhc-heartbeat --kind=off
+ExecStart=/usr/libexec/rhc/heartbeat run --kind=off
 TimeoutStartSec=10s
 
 NoNewPrivileges=yes

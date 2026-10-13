@@ -20,10 +20,7 @@ fmt:
 .PHONY: build
 build:
 	mkdir -p build
-	go build -o build/config ./examples/config
-	go build -o build/heartbeat ./examples/heartbeat
-	go build -o build/remote-write-upload ./examples/remote-write-upload
-	go build -o build/rhc-heartbeat ./cmd/rhc-heartbeat
+	go build -o build/heartbeat ./cmd/rhc-heartbeat
 
 .PHONY: server
 server:
