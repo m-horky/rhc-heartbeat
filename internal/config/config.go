@@ -26,12 +26,10 @@ type Timeout struct {
 	Idle    time.Duration
 }
 
-// Proxy contains a proxy URL, credentials, and bypass rules.
+// Proxy contains a proxy URL (including credentials) and bypass rules.
 type Proxy struct {
-	URI      url.URL
-	Username string
-	Password string
-	NoProxy  string
+	URI     url.URL
+	NoProxy string
 }
 
 // API contains remote endpoints.

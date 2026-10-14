@@ -33,13 +33,7 @@ func Run(_ context.Context, args []string) error {
 
 // redactProxyCredentials replaces configured proxy credentials before configuration is written to stdout.
 func redactProxyCredentials(cfg config.Config) config.Config {
-	if cfg.HTTP.Proxy.Username != "" {
-		cfg.HTTP.Proxy.Username = "..."
-	}
-
-	if cfg.HTTP.Proxy.Password != "" {
-		cfg.HTTP.Proxy.Password = "..."
-	}
+	cfg.HTTP.Proxy.URI.User = nil
 
 	return cfg
 }

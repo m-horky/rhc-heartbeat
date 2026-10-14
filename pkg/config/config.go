@@ -26,7 +26,7 @@ type HTTPConfig = internalconfig.HTTP
 // Timeout contains resolved HTTP transport timeouts.
 type Timeout = internalconfig.Timeout
 
-// Proxy describes the HTTP proxy, its credentials, and bypass rules.
+// Proxy describes the HTTP proxy, and bypass rules.
 type Proxy = internalconfig.Proxy
 
 // Get loads heartbeat configuration from environment overrides or the system defaults.
@@ -47,18 +47,11 @@ func Get() (Config, error) {
 
 	cfg := Config{Heartbeat: loaded.API.Heartbeat, HTTP: loaded.HTTP}
 
-	proxyCredentialLogValue := ""
-	if cfg.HTTP.Proxy.Username != "" || cfg.HTTP.Proxy.Password != "" {
-		proxyCredentialLogValue = "..."
-	}
-
 	slog.Debug("resolved configuration",
 		"heartbeat.uri", safeURL(cfg.Heartbeat.URI),
 		"heartbeat.tls_verify", cfg.Heartbeat.TLSVerify,
 		"heartbeat.ca_path", cfg.Heartbeat.CAPath,
 		"http.proxy.uri", safeURL(cfg.HTTP.Proxy.URI),
-		"http.proxy.username", proxyCredentialLogValue,
-		"http.proxy.password", proxyCredentialLogValue,
 	)
 
 	return cfg, nil
