@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"syscall"
 )
 
@@ -39,10 +38,11 @@ type FS interface {
 	Open(path string) (File, error)
 }
 
-// WriteFS extends FS atomic content replacement.
+// WriteFS extends FS with file writes and renames.
 type WriteFS interface {
 	FS
-	Replace(path string, data []byte, perm os.FileMode) error
+	Write(path string, data []byte, perm os.FileMode) error
+	Rename(oldPath, newPath string) error
 }
 
 // Filesystem implements WriteFS.
@@ -109,47 +109,39 @@ func (filesystem Filesystem) Read(path string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-// Replace atomically writes data at a path.
-func (Filesystem) Replace(path string, data []byte, perm os.FileMode) error {
-	directory := filepath.Dir(path)
-
-	file, err := os.CreateTemp(directory, ".rhc-heartbeat-*")
+// Write writes data at path in place, truncating any existing file and
+// creating a missing one with supplied permissions.
+func (Filesystem) Write(path string, data []byte, perm os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
+		return fmt.Errorf("write %s: %w", path, err)
 	}
-
-	tempPath := file.Name()
-	removeTemp := true
-
-	defer func() {
-		_ = file.Close()
-
-		if removeTemp {
-			_ = os.Remove(tempPath)
-		}
-	}()
 
 	if _, err := file.Write(data); err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
-	}
+		_ = file.Close()
 
-	if err := file.Chmod(perm.Perm()); err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 
 	if err := file.Sync(); err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
+		_ = file.Close()
+
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 
 	if err := file.Close(); err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 
-	if err := os.Rename(tempPath, path); err != nil {
-		return &os.PathError{Op: "replace", Path: path, Err: err}
-	}
+	return nil
+}
 
-	removeTemp = false
+// Rename moves a file to a new path, replacing any file that already exists
+// at the new path.
+func (Filesystem) Rename(oldPath, newPath string) error {
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", oldPath, newPath, err)
+	}
 
 	return nil
 }

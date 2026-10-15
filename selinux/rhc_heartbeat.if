@@ -1,0 +1,103 @@
+## <summary>Policy for rhc-heartbeat</summary>
+
+########################################
+## <summary>
+##	Execute rhc-heartbeat in the rhc_heartbeat domain.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed to transition.
+##	</summary>
+## </param>
+#
+interface(`rhc_heartbeat_domtrans',`
+	gen_require(`
+		type rhc_heartbeat_t, rhc_heartbeat_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	domtrans_pattern($1, rhc_heartbeat_exec_t, rhc_heartbeat_t)
+')
+
+########################################
+## <summary>
+##	Execute rhc-heartbeat in the caller domain.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`rhc_heartbeat_exec',`
+	gen_require(`
+		type rhc_heartbeat_exec_t;
+	')
+
+	corecmd_search_bin($1)
+	can_exec($1, rhc_heartbeat_exec_t)
+')
+
+########################################
+## <summary>
+##	Manage rhc-heartbeat units with systemctl.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`rhc_heartbeat_systemctl',`
+	gen_require(`
+		type rhc_heartbeat_t;
+		type rhc_heartbeat_unit_file_t;
+	')
+
+	systemd_exec_systemctl($1)
+	systemd_read_fifo_file_passwd_run($1)
+	allow $1 rhc_heartbeat_unit_file_t:file read_file_perms;
+	allow $1 rhc_heartbeat_unit_file_t:service manage_service_perms;
+
+	ps_process_pattern($1, rhc_heartbeat_t)
+')
+
+########################################
+## <summary>
+##	All of the rules required to administrate an rhc-heartbeat
+##	environment.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+## <param name="role">
+##	<summary>
+##	Role allowed access.
+##	</summary>
+## </param>
+## <rolecap/>
+#
+interface(`rhc_heartbeat_admin',`
+	gen_require(`
+		type rhc_heartbeat_t;
+		type rhc_heartbeat_unit_file_t;
+	')
+
+	allow $1 rhc_heartbeat_t:process signal_perms;
+	ps_process_pattern($1, rhc_heartbeat_t)
+
+	tunable_policy(`deny_ptrace',`',`
+		allow $1 rhc_heartbeat_t:process ptrace;
+	')
+
+	rhc_heartbeat_systemctl($1)
+	admin_pattern($1, rhc_heartbeat_unit_file_t)
+	allow $1 rhc_heartbeat_unit_file_t:service all_service_perms;
+
+	optional_policy(`
+		systemd_passwd_agent_exec($1)
+		systemd_read_fifo_file_passwd_run($1)
+	')
+')

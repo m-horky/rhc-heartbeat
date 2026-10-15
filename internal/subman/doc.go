@@ -4,10 +4,7 @@
 // runner and parses its key/value output into a map. Execution and parsing
 // failures are returned as errors.
 //
-//	facts, err := subman.Read(exec.OSRunner{})
-//	if err != nil {
-//		return err
-//	}
+//	facts, _ := subman.Read(exec.OSRunner{}, "/usr/sbin/subscription-manager")
 //	instanceID := facts["aws_instance_id"]
 //	_ = instanceID
 package subman

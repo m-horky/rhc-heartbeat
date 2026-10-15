@@ -6,6 +6,8 @@
 // serialize access. For each boot ID, the cache keeps the heartbeat with the
 // greatest monotonic time.
 //
+// Rotate renames an unreadable cache file aside, returning the rotated path.
+//
 // BindIdentity fills missing identity fields without replacing values already
 // recorded on a heartbeat.
 //

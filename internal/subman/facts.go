@@ -9,9 +9,9 @@ import (
 )
 
 // GetFacts executes subscription-manager facts --list and parses its output.
-func GetFacts(runner exec.Runner) (map[string]string, error) {
+func GetFacts(runner exec.Runner, path string) (map[string]string, error) {
 	result, err := runner.Run(exec.Command{
-		Path: "/usr/sbin/subscription-manager",
+		Path: path,
 		Args: []string{"facts", "--list"},
 	})
 	if err != nil {

@@ -34,6 +34,46 @@ func TestMissingIsEmpty(t *testing.T) {
 	}
 }
 
+// TestRotate verifies that Rotate renames the configured cache file aside.
+//
+// Given a configured cache file that cannot be read, when Rotate rotates it
+// and the cache is loaded again, then the broken file is kept at a
+// timestamped path and the load returns an empty cache.
+func TestRotate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "heartbeat.jsonl")
+	t.Setenv(string(constants.PendingCachePath), path)
+
+	if err := os.WriteFile(path, []byte("not a heartbeat record\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() succeeded for a corrupt cache file")
+	}
+
+	rotated, err := Rotate()
+	if err != nil {
+		t.Fatalf("Rotate() error = %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cache file stat error = %v, want not-exist", err)
+	}
+
+	if _, err := os.Stat(rotated); err != nil {
+		t.Fatalf("rotated file stat error = %v", err)
+	}
+
+	reloaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() after Rotate() error = %v", err)
+	}
+
+	if got := reloaded.Read(); len(got) != 0 {
+		t.Fatalf("Read() after rotation = %#v, want empty", got)
+	}
+}
+
 // TestLatestWithinBoot verifies that Add keeps the highest monotonic time per boot ID.
 //
 // Given multiple heartbeats for one boot and one for another,

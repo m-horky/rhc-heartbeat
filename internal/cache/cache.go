@@ -62,7 +62,18 @@ func (cache *Cache) Read() ([]heartbeat.Heartbeat, error) {
 	return heartbeats, nil
 }
 
-// Write replaces the cache contents with the supplied heartbeats.
+// Rotate renames the cache file aside for investigation and returns the rotated path.
+func (cache *Cache) Rotate(suffix string) (string, error) {
+	rotated := fmt.Sprintf("%s.%s", cache.path, suffix)
+
+	if err := cache.filesystem.Rename(cache.path, rotated); err != nil {
+		return "", fmt.Errorf("rotate heartbeat cache %s: %w", cache.path, err)
+	}
+
+	return rotated, nil
+}
+
+// Write rewrites the cache file in place with the supplied heartbeats.
 func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 	ordered := append([]heartbeat.Heartbeat(nil), heartbeats...)
 	sort.SliceStable(ordered, func(i, j int) bool {
@@ -90,8 +101,8 @@ func (cache *Cache) Write(heartbeats []heartbeat.Heartbeat) error {
 		}
 	}
 
-	if err := cache.filesystem.Replace(cache.path, data.Bytes(), fileMode); err != nil {
-		return fmt.Errorf("replace heartbeat cache %s: %w", cache.path, err)
+	if err := cache.filesystem.Write(cache.path, data.Bytes(), fileMode); err != nil {
+		return fmt.Errorf("write heartbeat cache %s: %w", cache.path, err)
 	}
 
 	slog.Debug("heartbeat cache updated", "count", len(heartbeats), "path", cache.path)

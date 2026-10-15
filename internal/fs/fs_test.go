@@ -68,20 +68,20 @@ func TestErrTruncated(t *testing.T) {
 	}
 }
 
-// TestReplace verifies that Replace writes replacement contents.
+// TestWrite verifies that Write replaces file contents in place.
 //
-// Given a file with old contents, when Filesystem.Replace writes new contents,
-// then subsequent reads return the complete new contents and mode.
-func TestReplace(t *testing.T) {
+// Given a file with old contents, when Filesystem.Write writes new contents,
+// then subsequent reads return the complete new contents.
+func TestWrite(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "cache.jsonl")
-	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("old contents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := (Filesystem{}).Replace(path, []byte("new\n"), 0o640); err != nil {
-		t.Fatalf("Replace() error = %v", err)
+	if err := (Filesystem{}).Write(path, []byte("new contents\n"), 0o640); err != nil {
+		t.Fatalf("Write() error = %v", err)
 	}
 
 	got, err := os.ReadFile(path)
@@ -89,8 +89,22 @@ func TestReplace(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	if string(got) != "new\n" {
-		t.Fatalf("file contents = %q, want %q", got, "new\n")
+	if string(got) != "new contents\n" {
+		t.Fatalf("file contents = %q, want %q", got, "new contents\n")
+	}
+}
+
+// TestWriteCreatesMissingFile verifies that Write applies the requested mode on creation.
+//
+// Given a path with no file, when Filesystem.Write writes contents,
+// then the file is created with the requested permissions.
+func TestWriteCreatesMissingFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "cache.jsonl")
+
+	if err := (Filesystem{}).Write(path, []byte("contents\n"), 0o640); err != nil {
+		t.Fatalf("Write() error = %v", err)
 	}
 
 	info, err := os.Stat(path)
@@ -100,5 +114,71 @@ func TestReplace(t *testing.T) {
 
 	if gotMode := info.Mode().Perm(); gotMode != 0o640 {
 		t.Fatalf("file mode = %#o, want %#o", gotMode, 0o640)
+	}
+}
+
+// TestRename verifies that Rename moves a file to a new path.
+//
+// Given a file at a path, when Filesystem.Rename moves it to another path,
+// then the original path no longer exists and the new path holds the contents.
+func TestRename(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	oldPath := filepath.Join(directory, "cache.jsonl")
+	newPath := filepath.Join(directory, "cache.jsonl.1")
+
+	if err := os.WriteFile(oldPath, []byte("contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (Filesystem{}).Rename(oldPath, newPath); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old path stat error = %v, want not-exist", err)
+	}
+
+	got, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(got) != "contents" {
+		t.Fatalf("new path contents = %q, want %q", got, "contents")
+	}
+}
+
+// TestRenameOverwritesTarget verifies that Rename replaces an existing target.
+//
+// Given a source file and an existing target file, when Filesystem.Rename
+// renames the source over the target, then the target holds the source contents.
+func TestRenameOverwritesTarget(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	source := filepath.Join(directory, "source")
+	target := filepath.Join(directory, "target")
+
+	if err := os.WriteFile(source, []byte("source contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(target, []byte("target contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (Filesystem{}).Rename(source, target); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if string(got) != "source contents" {
+		t.Fatalf("target contents = %q, want %q", got, "source contents")
 	}
 }

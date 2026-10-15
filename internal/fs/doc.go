@@ -1,8 +1,15 @@
 // Package fs provides filesystem capabilities.
 //
 // Use FS in consumers and inject an implementation rather than calling
-// the operating system directly. Tests can provide a small fake that
-// implements the same interface.
+// the operating system directly. FS is read-only, use WriteFS for writing.
+//
+//	var filesystem fs.WriteFS = fs.Filesystem{}
+//	_ = filesystem.Write(path, data, 0o640)
+//
+// Rename moves a file to a new path, replacing any file that already exists
+// at the new path:
+//
+//	_ = filesystem.Rename(path, path+".old")
 //
 // Read opens the file and returns at most the requested number of bytes.
 // Callers can use errors.Is to detect truncation:

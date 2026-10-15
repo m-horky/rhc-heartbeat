@@ -20,7 +20,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 The following points are known and expected features, and should not be considered security findings.
 
-- TLS verification and HTTP-only connections can be set in configuration. They are meant to be used for development and on trusted networks.
+- TLS verification and HTTP-only connections can be set in configuration. They are meant to be used for development and on trusted networks. All cleartext leakage through HTTP is out of scope.
 - Application traffic can follow redirects. The primary endpoint is configured through the configuration file, which is not attacker-controllable.
+- Filesystem reads can follow symlinks. All paths are assumed trusted since they are not attacker-controllable. Symlinks are a feature of a filesystem.
 - Paths read by the program can be configured with environment variables, which are not attacker-controllable. Customizable paths are only supported for development and testing.
 - `make server` starts a development-only Prometheus receiver and is not included in product packages.

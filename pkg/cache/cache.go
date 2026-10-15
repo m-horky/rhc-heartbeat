@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
+	"time"
 
 	internalcache "github.com/m-horky/rhc-heartbeat/internal/cache"
 	"github.com/m-horky/rhc-heartbeat/internal/fs"
@@ -37,6 +39,20 @@ func Load() (*Cache, error) {
 	loaded.persistedCount = len(loaded.heartbeats)
 
 	return loaded, nil
+}
+
+// Rotate renames the pending-heartbeat cache file aside, keeping the broken
+// file available for investigation, and returns the rotated path.
+func Rotate() (string, error) {
+	impl := internalcache.New(fs.Filesystem{}, constants.Path(constants.PendingCachePath))
+	now := time.Now().Unix()
+
+	rotated, err := impl.Rotate(strconv.FormatInt(now, 10))
+	if err != nil {
+		return "", fmt.Errorf("rotate pending heartbeats: %w", err)
+	}
+
+	return rotated, nil
 }
 
 // Read returns cached heartbeats.

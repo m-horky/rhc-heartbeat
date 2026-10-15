@@ -1,0 +1,10 @@
+# Executables
+/usr/libexec/rhc/heartbeat        -- gen_context(system_u:object_r:rhc_heartbeat_exec_t,s0)
+/usr/libexec/rhc/heartbeat-rhsm -- gen_context(system_u:object_r:rhc_heartbeat_rhsm_exec_t,s0)
+
+# systemd units
+/usr/lib/systemd/system/rhc-heartbeat(-on|-off|-sleep)?\.service -- gen_context(system_u:object_r:rhc_heartbeat_unit_file_t,s0)
+/usr/lib/systemd/system/rhc-heartbeat\.timer                     -- gen_context(system_u:object_r:rhc_heartbeat_unit_file_t,s0)
+
+# Cache file
+/var/lib/rhc/heartbeat\.jsonl.* -- gen_context(system_u:object_r:rhc_heartbeat_cache_t,s0)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/m-horky/rhc-heartbeat/internal/exec"
 	"github.com/m-horky/rhc-heartbeat/internal/subman"
+	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
 
 type marketplaceProfile struct {
@@ -29,7 +30,7 @@ type Profile struct {
 
 // Get reads subscription-manager facts and transforms them into a system profile.
 func Get() (Profile, error) {
-	facts, err := subman.GetFacts(exec.OSRunner{})
+	facts, err := subman.GetFacts(exec.OSRunner{}, constants.Path(constants.RHSMBinPath))
 	if err != nil {
 		return Profile{}, fmt.Errorf("read system profile facts: %w", err)
 	}

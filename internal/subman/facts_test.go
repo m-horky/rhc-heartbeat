@@ -66,7 +66,7 @@ func TestExitCode(t *testing.T) {
 
 			r := runner{result: test.result, err: test.err}
 
-			if _, err := GetFacts(r); err == nil {
+			if _, err := GetFacts(r, "/fake/path"); err == nil {
 				t.Errorf("Read() error = nil for result %#v, want an error", test.result)
 			}
 		})

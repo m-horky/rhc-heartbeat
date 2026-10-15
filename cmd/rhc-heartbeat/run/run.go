@@ -49,9 +49,9 @@ func Run(ctx context.Context, args []string) error {
 	logInsecureTransport(cfg)
 
 	// Load past heartbeats.
-	hbCache, err := cache.Load()
+	hbCache, err := loadCache()
 	if err != nil {
-		return fmt.Errorf("cannot load cache: %w", err)
+		return err
 	}
 
 	// Collect current heartbeat.
@@ -85,6 +85,27 @@ func Run(ctx context.Context, args []string) error {
 
 	// Clean up.
 	return handleSuccess(hbCache)
+}
+
+// loadCache loads pending heartbeats, rotating an unreadable cache file
+// aside: the broken file is kept for investigation and the run continues
+// with a fresh cache.
+func loadCache() (*cache.Cache, error) {
+	hbCache, err := cache.Load()
+	if err != nil {
+		rotated, rotateErr := cache.Rotate()
+		if rotateErr != nil {
+			return nil, fmt.Errorf("cannot rotate heartbeat cache: %w (cannot load cache: %w)", rotateErr, err)
+		}
+
+		slog.Error("cannot load heartbeat cache", "err", err, "rotated-to", rotated)
+
+		if hbCache, err = cache.Load(); err != nil {
+			return nil, fmt.Errorf("cannot load cache: %w", err)
+		}
+	}
+
+	return hbCache, nil
 }
 
 // printHelp writes generated run-command flag help to output.
