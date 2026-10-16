@@ -67,7 +67,7 @@ done
 install -m 0755 -vd                     %{buildroot}%{_libexecdir}/rhc/
 install -m 0755 -vp %{gobuilddir}/bin/rhc-heartbeat %{buildroot}%{_libexecdir}/rhc/heartbeat
 # SELinux transition wrapper for subscription-manager
-install -m 0755 -vp data/wrapper/heartbeat-rhsm %{buildroot}%{_libexecdir}/rhc/heartbeat-rhsm
+install -m 0755 -vp %{gobuilddir}/bin/heartbeat-rhsm %{buildroot}%{_libexecdir}/rhc/heartbeat-rhsm
 
 # Configuration
 install -m 0755 -vd                     %{buildroot}%{_prefix}/lib/rhc/

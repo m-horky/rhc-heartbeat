@@ -16,9 +16,12 @@ init_nnp_daemon_domain(rhc_heartbeat_t)
 type rhc_heartbeat_unit_file_t;
 systemd_unit_file(rhc_heartbeat_unit_file_t)
 
-# Require the domain of subscription-manager's Python code.
+# Require the domain of resources we need.
 gen_require(`
 	type rhsmcertd_t;
+	type dmidecode_t;
+	type sysfs_t;
+	type cgroup_t;
 ')
 
 # Define a custom wrapper with a domain that is allowed to transition
@@ -69,9 +72,8 @@ dev_read_urand(rhc_heartbeat_t)
 # reusing the policy maintained for its Python code. rhsmcertd_t can only
 # be entered through a file type it holds entrypoint permission for, and
 # /usr/sbin/subscription-manager is generic bin_t.
-# We execute the wrapper at /usr/libexec/rhc/heartbeat-rhsm, labeled
-# with our own rhc_heartbeat_rhsm_exec_t, and the wrapper execs the real
-# binary from inside rhsmcertd_t (which permits execute_no_trans on bin_t).
+# The wrapper execs the real binary from inside rhsmcertd_t (which permits
+# execute_no_trans on bin_t).
 domtrans_pattern(rhc_heartbeat_t, rhc_heartbeat_rhsm_exec_t, rhsmcertd_t)
 
 # NoNewPrivileges set by the units is inherited across fork/exec, so the
@@ -81,3 +83,20 @@ allow rhc_heartbeat_t rhsmcertd_t:process2 nnp_transition;
 # Declare the wrapper as an entry file for rhsmcertd_t.
 # This grants the entrypoint permission the transition requires.
 domain_entry_file(rhsmcertd_t, rhc_heartbeat_rhsm_exec_t)
+
+# The Go runtime reads the transparent hugepage page size at startup.
+allow rhc_heartbeat_t sysfs_t:file { getattr open read };
+
+# The Go runtime reads the cgroup CPU limit to size GOMAXPROCS, searching
+# the cgroup2 hierarchy on the way. The helper's runtime performs the same
+# probes inside rhsmcertd_t.
+allow rhc_heartbeat_t cgroup_t:dir search;
+allow rhc_heartbeat_t cgroup_t:file { getattr open read };
+allow rhsmcertd_t cgroup_t:dir search;
+allow rhsmcertd_t cgroup_t:file { getattr open read };
+
+# subscription-manager facts runs virt-what and dmidecode. NoNewPrivileges
+# set by the units is inherited across fork/exec, so the transition from
+# rhsmcertd_t into dmidecode_t needs the nnp_transition permission too,
+# mirroring the grant for the rhc_heartbeat_t -> rhsmcertd_t hop above.
+allow rhsmcertd_t dmidecode_t:process2 nnp_transition;

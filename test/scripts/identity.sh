@@ -85,6 +85,15 @@ main() {
     -subj "/O=tests/CN=${UUID}" \
     -addext "extendedKeyUsage=clientAuth" 2>/dev/null
 
+  # subscription-manager requires root:<rhsm group> ownership and 0640 mode on
+  # the consumer certificate pair.
+  local group=root
+  if getent group rhsm >/dev/null 2>&1; then
+    group=rhsm
+  fi
+  chgrp "${group}" "${CERT}" "${KEY}"
+  chmod 0640 "${CERT}" "${KEY}"
+
   echo "${UUID}"
 }
 
