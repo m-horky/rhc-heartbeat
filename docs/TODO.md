@@ -23,8 +23,8 @@
   - [x] Systemd service executing on system events (`systemd.special(7)`)
   - [x] `systemd-analyze security "$SERVICE"` reports a score of 4.0 or lower
   - [ ] Man page for the binary
-  - [ ] SELinux policy code
-  - [ ] SELinux policy subpackage
+  - [x] SELinux policy code
+  - [x] SELinux policy subpackage
   - [x] Process locking: Create a global process lock that sleeps until the lock lifts
   - [x] Correctly derive Observatorium URL from the Candlepin URL
 

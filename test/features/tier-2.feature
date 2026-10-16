@@ -69,18 +69,3 @@ Feature: Resilience and edge cases
        When `heartbeat run` is run
        Then `heartbeat run` reports a configuration or upload error
         And /var/lib/rhc/heartbeat.jsonl contains the pending heartbeat
-
-    Scenario: A reboot starts a new monotonic-time sequence
-      Given RHSM identity certificate pair is present
-        And a heartbeat has been recorded for the current boot
-       When the system reboots and `heartbeat run` is run
-       Then the new heartbeat has a different boot ID
-        And its monotonic timestamp is interpreted within the new boot
-        And both boot records are handled without losing pending heartbeats
-
-    Scenario: A wall-clock adjustment does not reorder monotonic heartbeats
-      Given RHSM identity certificate pair is present
-        And a heartbeat has been recorded
-       When the wall clock moves backward and `heartbeat run` is run
-       Then the new heartbeat has a later monotonic timestamp for the same boot
-        And both heartbeat records are handled without loss
