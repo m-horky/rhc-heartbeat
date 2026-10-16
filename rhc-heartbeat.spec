@@ -6,7 +6,7 @@
 %bcond_with go_vendor_tools
 
 %global goipath github.com/m-horky/rhc-heartbeat
-Version:        0.3.1
+Version:        0.3.2
 %gometa -L -f
 
 Name:           rhc-heartbeat

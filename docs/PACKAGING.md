@@ -8,6 +8,7 @@
 
     ```shell
     $ VERSION=X.Y.Z
+    $ git add rhc-heartbeat.spec selinux/rhc_heartbeat.te
     $ git commit -s -m "chore: v$VERSION"
     $ git tag -a -s -m v$VERSION v$VERSION
     $ git push origin v$VERSION
