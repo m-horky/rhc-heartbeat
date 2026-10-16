@@ -10,7 +10,7 @@ Feature: Resilience and edge cases
        Then /var/lib/rhc/heartbeat.jsonl contains the pending heartbeat
        When the Remote Write endpoint becomes available
         And `heartbeat run` is run
-       Then the pending heartbeat is uploaded
+       Then a new heartbeat is uploaded
         And /var/lib/rhc/heartbeat.jsonl is absent or empty
 
     Scenario: A queued heartbeat keeps its original identity after identity rotation
