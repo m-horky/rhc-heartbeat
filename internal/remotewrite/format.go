@@ -98,6 +98,18 @@ func newLabelsFromHeartbeat(hb heartbeat.Heartbeat) ([]label, error) {
 		labels = append(labels, label{name: "vcpu_count", value: strconv.FormatUint(*hb.VCPUCount, 10)})
 	}
 
+	if hb.SyspurposeRole != nil {
+		labels = append(labels, label{name: "syspurpose_role", value: *hb.SyspurposeRole})
+	}
+
+	if hb.SyspurposeServiceLevel != nil {
+		labels = append(labels, label{name: "syspurpose_service_level", value: *hb.SyspurposeServiceLevel})
+	}
+
+	if hb.SyspurposeUsage != nil {
+		labels = append(labels, label{name: "syspurpose_usage", value: *hb.SyspurposeUsage})
+	}
+
 	if hb.ProductIDs != nil {
 		labels = append(labels, label{name: "product_ids", value: strings.Join(*hb.ProductIDs, ",")})
 	}

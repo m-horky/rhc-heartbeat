@@ -15,6 +15,7 @@ const (
 	DefaultProductDir pathID = "RHC_HEARTBEAT_DEFAULT_PRODUCT_DIR"
 	RHSMConfigPath    pathID = "RHC_HEARTBEAT_RHSM_CONFIG"
 	RHSMBinPath       pathID = "RHC_HEARTBEAT_RHSM_BIN"
+	SyspurposePath    pathID = "RHC_HEARTBEAT_SYSPURPOSE_FILE"
 )
 
 var paths = map[pathID]string{ //nolint:gochecknoglobals
@@ -28,6 +29,7 @@ var paths = map[pathID]string{ //nolint:gochecknoglobals
 	DefaultProductDir: "/etc/pki/product-default",
 	RHSMConfigPath:    "/etc/rhsm/rhsm.conf",
 	RHSMBinPath:       "/usr/libexec/rhc/heartbeat-rhsm",
+	SyspurposePath:    "/etc/rhsm/syspurpose/syspurpose.json",
 }
 
 func Path(name pathID) string {

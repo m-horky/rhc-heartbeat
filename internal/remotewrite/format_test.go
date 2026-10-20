@@ -53,8 +53,8 @@ func TestSeriesAreSortedAndChronological(t *testing.T) {
 
 // TestPayloadAsLabels verifies system profile reaches the Remote Write labels.
 //
-// Given a heartbeat with marketplace, CPU, and product details, when encoded,
-// then those details are labeled and ID lists use comma-separated values.
+// Given a heartbeat with marketplace, CPU, syspurpose, and product details,
+// when encoded, then those details are labeled and ID lists use comma-separated values.
 func TestPayloadAsLabels(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +62,9 @@ func TestPayloadAsLabels(t *testing.T) {
 		HostID: new("uuid"), HostOrg: new("org"), BootID: "boot", Kind: heartbeat.KindPing,
 		MarketplaceID: new("aws"), MarketplaceAccountID: new("account"), MarketplaceInstanceID: new("instance"),
 		MarketplaceOfferIDs: new([]string{"offer-a", "offer-b"}), VCPUCount: new(uint64(16)),
-		ProductIDs: new([]string{"product-a", "product-b"}),
+		SyspurposeRole: new("Red Hat Enterprise Linux Server"), SyspurposeServiceLevel: new("Premium"),
+		SyspurposeUsage: new("Production"),
+		ProductIDs:      new([]string{"product-a", "product-b"}),
 	}})
 	if err != nil {
 		t.Fatalf("encodeHeartbeats() error = %v", err)
@@ -86,12 +88,15 @@ func TestPayloadAsLabels(t *testing.T) {
 	}
 
 	for name, want := range map[string]string{
-		"marketplace_id":          "aws",
-		"marketplace_account_id":  "account",
-		"marketplace_instance_id": "instance",
-		"marketplace_offer_ids":   "offer-a,offer-b",
-		"vcpu_count":              "16",
-		"product_ids":             "product-a,product-b",
+		"marketplace_id":           "aws",
+		"marketplace_account_id":   "account",
+		"marketplace_instance_id":  "instance",
+		"marketplace_offer_ids":    "offer-a,offer-b",
+		"vcpu_count":               "16",
+		"syspurpose_role":          "Red Hat Enterprise Linux Server",
+		"syspurpose_service_level": "Premium",
+		"syspurpose_usage":         "Production",
+		"product_ids":              "product-a,product-b",
 	} {
 		if labelValues[name] != want {
 			t.Errorf("label %q = %q, want %q", name, labelValues[name], want)

@@ -16,18 +16,21 @@ import (
 
 // Heartbeat contains system profile data and time.
 type Heartbeat struct {
-	BootID                string
-	TimeUnix              time.Time
-	TimeMonotonic         time.Duration
-	Kind                  Kind
-	HostID                *string
-	HostOrg               *string
-	MarketplaceID         *string
-	MarketplaceAccountID  *string
-	MarketplaceInstanceID *string
-	MarketplaceOfferIDs   *[]string
-	VCPUCount             *uint64
-	ProductIDs            *[]string
+	BootID                 string
+	TimeUnix               time.Time
+	TimeMonotonic          time.Duration
+	Kind                   Kind
+	HostID                 *string
+	HostOrg                *string
+	MarketplaceID          *string
+	MarketplaceAccountID   *string
+	MarketplaceInstanceID  *string
+	MarketplaceOfferIDs    *[]string
+	VCPUCount              *uint64
+	SyspurposeRole         *string
+	SyspurposeServiceLevel *string
+	SyspurposeUsage        *string
+	ProductIDs             *[]string
 }
 
 // Get collects a heartbeat using the system defaults and the requested kind.
@@ -54,6 +57,9 @@ func Get(kind Kind) (Heartbeat, error) {
 		hb.MarketplaceInstanceID = systemProfile.Instance
 		hb.MarketplaceOfferIDs = systemProfile.Offers
 		hb.VCPUCount = systemProfile.VCPUCount
+		hb.SyspurposeRole = systemProfile.Role
+		hb.SyspurposeServiceLevel = systemProfile.ServiceLevel
+		hb.SyspurposeUsage = systemProfile.Usage
 	}
 
 	products, err := product.Get()

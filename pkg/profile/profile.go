@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/m-horky/rhc-heartbeat/internal/exec"
+	"github.com/m-horky/rhc-heartbeat/internal/fs"
 	"github.com/m-horky/rhc-heartbeat/internal/subman"
 	"github.com/m-horky/rhc-heartbeat/pkg/constants"
 )
@@ -22,17 +23,32 @@ type cpuProfile struct {
 	VCPUCount *uint64
 }
 
-// Profile contains system profile and marketplace data.
+type syspurposeProfile struct {
+	Role         *string
+	ServiceLevel *string
+	Usage        *string
+}
+
+// Profile contains system profile, system purpose, and marketplace data.
 type Profile struct {
 	marketplaceProfile
 	cpuProfile
+	syspurposeProfile
 }
 
-// Get reads subscription-manager facts and transforms them into a system profile.
+// Get reads subscription-manager facts and the local syspurpose file, and
+// transforms them into a system profile. A syspurpose file that cannot be
+// read or parsed only clears the system purpose fields; the facts-derived
+// profile is preserved and the problem is logged.
 func Get() (Profile, error) {
 	facts, err := subman.GetFacts(exec.OSRunner{}, constants.Path(constants.RHSMBinPath))
 	if err != nil {
 		return Profile{}, fmt.Errorf("read system profile facts: %w", err)
+	}
+
+	syspurpose, err := subman.ReadSyspurpose(fs.Filesystem{}, constants.Path(constants.SyspurposePath))
+	if err != nil {
+		slog.Warn("cannot read system purpose", "err", err)
 	}
 
 	profile := Profile{}
@@ -45,6 +61,9 @@ func Get() (Profile, error) {
 	profile.Instance = marketplace.Instance
 	profile.Account = marketplace.Account
 	profile.Offers = marketplace.Offers
+	profile.Role = syspurpose.Role
+	profile.ServiceLevel = syspurpose.ServiceLevel
+	profile.Usage = syspurpose.Usage
 
 	return profile, nil
 }
