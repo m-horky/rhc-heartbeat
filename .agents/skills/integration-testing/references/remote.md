@@ -57,7 +57,7 @@ Pre-create systemd oneshot unit for Prometheus, enable before testing:
     [Service]
     Type=oneshot
     RemainAfterExit=yes
-    ExecStart=/usr/bin/podman run -d --replace --name prometheus -p 127.0.0.1:9000:9090 -v /root/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z docker.io/prom/prometheus:latest --config.file=/etc/prometheus/prometheus.yml --web.enable-remote-write-receiver
+    ExecStart=/usr/bin/podman run -d --replace --name prometheus -p 127.0.0.1:9000:9090 -v prometheus:/prometheus -v /root/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z docker.io/prom/prometheus:latest --config.file=/etc/prometheus/prometheus.yml --web.enable-remote-write-receiver
     ExecStop=/usr/bin/podman stop prometheus
 
     [Install]
