@@ -58,8 +58,12 @@ miscfiles_read_all_certs(rhc_heartbeat_t)
 allow rhc_heartbeat_t rhc_heartbeat_cache_t:file manage_file_perms;
 files_var_lib_filetrans(rhc_heartbeat_t, rhc_heartbeat_cache_t, file, "heartbeat.jsonl")
 
-# Allow settings locks in /run/lock (O_CREAT, flock(2)).
-files_manage_generic_locks(rhc_heartbeat_t)
+# Lock file, with the directory created by systemd-tmpfiles.
+type rhc_heartbeat_lock_t;
+files_type(rhc_heartbeat_lock_t)
+
+allow rhc_heartbeat_t rhc_heartbeat_lock_t:dir { getattr search };
+allow rhc_heartbeat_t rhc_heartbeat_lock_t:file manage_file_perms;
 
 # Outbound TCP connections for Prometheus and HTTP proxy.
 corenet_tcp_connect_all_ports(rhc_heartbeat_t)

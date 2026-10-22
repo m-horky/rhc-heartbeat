@@ -78,6 +78,10 @@ install -m 0755 -vd                     %{buildroot}%{_sysconfdir}/rhc/rhc-heart
 install -m 0755 -vd                     %{buildroot}%{_unitdir}
 install -m 0644 -vp data/systemd/*.service data/systemd/*.timer %{buildroot}%{_unitdir}/
 
+# tmpfiles.d
+install -m 0755 -vd                     %{buildroot}%{_tmpfilesdir}
+install -m 0644 -vp data/tmpfiles.d/rhc-heartbeat.conf %{buildroot}%{_tmpfilesdir}/
+
 # SELinux policy module
 %if %{with selinux}
 install -m 0755 -vd                     %{buildroot}%{_datadir}/selinux/packages
@@ -127,9 +131,14 @@ SELinux policy module confining the rhc-heartbeat daemon.
 %{_unitdir}/rhc-heartbeat-sleep.service
 %{_unitdir}/rhc-heartbeat-off.service
 %{_unitdir}/rhc-heartbeat-on.service
+# tmpfiles.d
+%{_tmpfilesdir}/rhc-heartbeat.conf
 # Documentation
 %license LICENSE
 %doc README.md SECURITY.md
+
+%post
+%tmpfiles_create rhc-heartbeat.conf
 
 %if %{with selinux}
 %files selinux

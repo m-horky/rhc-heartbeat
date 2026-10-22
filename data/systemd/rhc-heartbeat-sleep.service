@@ -31,6 +31,7 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/rhc
+ReadWritePaths=/run/rhc-heartbeat
 RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes

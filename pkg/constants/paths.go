@@ -22,7 +22,7 @@ var paths = map[pathID]string{ //nolint:gochecknoglobals
 	ConfigPath:        "/etc/rhc/rhc-heartbeat.conf",
 	ConfigDropInsDir:  "/etc/rhc/rhc-heartbeat.conf.d/",
 	PendingCachePath:  "/var/lib/rhc/heartbeat.jsonl",
-	LockPath:          "/run/lock/rhc-heartbeat.lock",
+	LockPath:          "/run/rhc-heartbeat/heartbeat.lock",
 	IdentityCertPath:  "/etc/pki/consumer/cert.pem",
 	IdentityKeyPath:   "/etc/pki/consumer/key.pem",
 	ProductDir:        "/etc/pki/product",
