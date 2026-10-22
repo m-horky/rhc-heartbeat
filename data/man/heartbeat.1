@@ -1,0 +1,95 @@
+.\" Man page for rhc-heartbeat.
+.TH HEARTBEAT 1 "2026" "rhc-heartbeat" "User Commands"
+
+.SH NAME
+heartbeat \- collect and report system heartbeat data
+
+.SH SYNOPSIS
+.B heartbeat \fICOMMAND\fR [\fIFLAGS\fR]
+
+.SH DESCRIPTION
+.B heartbeat
+is a service for collecting and reporting system heartbeat data.
+It periodically collects a heartbeat describing the system, caches any
+records that could not be delivered, and uploads them to the configured
+Prometheus endpoint using the system's RHSM identity certificate.
+.P
+Only one instance may run at a time; a lock file prevents concurrent runs.
+Pending heartbeats that failed to upload are retained and retried on the next
+run. A pending cache that cannot be read is rotated aside: the broken file is
+renamed with a Unix timestamp suffix and left in place for investigation,
+and the run continues with a fresh cache.
+
+.SH COMMANDS
+.TP
+.B run
+Collect and upload a heartbeat. Failed uploads keep the record in the pending
+cache for a later retry.
+.TP
+.B config
+Print the resolved configuration as JSON to standard output.
+.TP
+.B profile
+Collect a heartbeat and print it as JSON to standard output.
+
+.SH FILES
+
+.TP
+.I /etc/rhc/rhc-heartbeat.conf
+Main configuration.
+
+.TP
+.I /etc/rhc/rhc-heartbeat.conf.d/
+Drop-in directory; TOML files here override values from the main
+configuration.
+
+.SH EXAMPLES
+
+.TP
+Collect and upload a periodic heartbeat:
+.B /usr/libexec/rhc/heartbeat run
+
+.TP
+Inspect the resolved configuration:
+.B /usr/libexec/rhc/heartbeat config
+
+.TP
+Inspect a collected heartbeat without uploading it:
+.B /usr/libexec/rhc/heartbeat profile
+
+.SH ENVIRONMENT
+.B heartbeat
+is intended to be a zero-config program that does not require user input.
+The following override variables should only be used during development.
+
+.TP
+.B RHC_HEARTBEAT_CONFIG=/etc/rhc/rhc-heartbeat.conf
+Path to the configuration file.
+
+.TP
+.B RHC_HEARTBEAT_DROPINS=/etc/rhc/rhc-heartbeat.conf.d/
+Directory with configuration drop-ins overriding the main configuration.
+
+.TP
+.B RHC_HEARTBEAT_RHSM_CONFIG=/etc/rhsm/rhsm.conf
+Path to the subscription-manager configuration.
+
+.TP
+.B RHC_HEARTBEAT_SYSPURPOSE_FILE=/etc/rhsm/syspurpose/syspurpose.json
+Path to the subscription-manager system purpose cache.
+
+.TP
+.B RHC_HEARTBEAT_PENDING_CACHE=/var/lib/rhc/heartbeat.jsonl
+Path to the pending heartbeat cache.
+
+.TP
+.B RHC_HEARTBEAT_LOCK=/run/rhc-heartbeat/heartbeat.lock
+Path to the lock file.
+
+.TP
+.B RHC_HEARTBEAT_CONSUMER_CERT|KEY=/etc/pki/consumer/cert|key.pem
+Paths to the consumer identity used for TLS client authentication.
+
+.TP
+.B RHC_HEARTBEAT_PRODUCT_DIR=/etc/pki/product|product-default
+Directories with installed product certificates.
