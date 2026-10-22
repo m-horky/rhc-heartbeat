@@ -1,6 +1,6 @@
 # Remote execution environment (SSH)
 
-Suite runs on remote VM supplied by operator. VM disposable: torn down after tests, so agent may freely manage it: start/stop Prometheus, adjust system clock (e.g. `timedatectl set-time`), reboot. No cleanup needed afterward.
+Suite runs on disposable remote VM supplied by operator: torn down after tests, so agent may freely manage it: start/stop Prometheus, adjust system clock (e.g. `timedatectl set-time`), reboot. No cleanup needed afterward.
 
 ## SSH access
 
@@ -14,16 +14,17 @@ Port 9090 reserved for Cockpit; host Prometheus on 9000. Copy `test/prometheus.y
 
     podman run -d --rm --name prometheus \
         -p "0.0.0.0:9000:9090/tcp" \
+        -v "prometheus:/prometheus" \
         -v ./prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z \
         docker.io/prom/prometheus:latest \
         --config.file=/etc/prometheus/prometheus.yml \
         --web.enable-remote-write-receiver
 
-Prometheus reachable at `http://<host>:9000` from agent machine (subject to VM firewall) and `http://localhost:9000` on VM. Verify before running scenarios, e.g. `curl -fsS http://<host>:9000/-/healthy`; report to operator if inaccessible.
+Prometheus reachable at `http://<host>:9000` from agent machine (subject to VM firewall) and `http://localhost:9000` on VM. Verify before scenarios, e.g. `curl -fsS http://<host>:9000/-/healthy`; report to operator if inaccessible.
 
 ## Identity
 
-If remote system unregistered with subscription-manager, generate identity cert pair: copy `test/scripts/identity.sh` to VM, run there (e.g. `bash identity.sh -f /etc/pki/consumer`), or run locally and copy resulting `key.pem` and `cert.pem` to VM.
+If remote system unregistered with subscription-manager, generate identity cert pair: copy `test/scripts/identity.sh` to VM, run there (e.g. `bash identity.sh -f /etc/pki/consumer`), or run locally and copy `key.pem` and `cert.pem` to VM.
 
 ## Configuration and execution
 
@@ -38,7 +39,7 @@ Query Prometheus: `bash test/scripts/query.sh -u http://<host>:9000/api/v1/query
 
 ## Environment pitfalls
 
-**Proxy environment variables leak into helpers.** SSH sessions may carry `HTTP_PROXY`/`HTTPS_PROXY` pointing at remote proxy. Heartbeat ignores them (uses own config), but Python's `urllib` and curl (uppercase `HTTPS_PROXY` for https URLs) honor them. Run every helper with scrubbed environment:
+**Proxy environment variables leak into helpers.** SSH sessions may carry `HTTP_PROXY`/`HTTPS_PROXY` pointing at remote proxy. Heartbeat ignores them (own config), but Python's `urllib` and curl (uppercase `HTTPS_PROXY` for https URLs) honor them. Run every helper with scrubbed environment:
 
     env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy python3 <helper>.py
 
@@ -64,6 +65,10 @@ Pre-create systemd oneshot unit for Prometheus, enable before testing:
 
 **Missing or broken tools.** `bc` may be missing (use shell arithmetic), `setools-console` uninstalable on unregistered VM (analyze AVCs from raw audit log instead), `date -d` misparses some formats (pass numeric epochs to Prometheus range queries instead).
 
+**`pkill -f` kills the SSH session.** Instead, capture PID at launch (`nohup ... & echo $! > pidfile; kill $(cat pidfile)`, or match string unique to process (`pkill -f "python3 /root/http500.py"`).
+
+** `cmd | tee` masks exit codes, `echo $?` prints 0. Capture `${PIPESTATUS[0]}`, or avoid pipes when asserting exit codes.
+
 **Quick Prometheus liveness check.** Empty POST to `/api/v1/write` must return HTTP 400. Any HTTP response means receiver live.
 
 ## Verifying uploads in Prometheus
@@ -77,7 +82,7 @@ Pre-create systemd oneshot unit for Prometheus, enable before testing:
 ## Configuration discovery
 
 - `/usr/libexec/rhc/heartbeat config` prints resolved configuration; use it to discover valid keys instead of guessing. Unknown keys in `rhc-heartbeat.conf` silently ignored.
-- TLS CA can be configured by setting `[api.heartbeat] ca-path`. By default, it comes from `rhsm.conf` `[rhsm] repo_ca_cert`.
+- TLS CA configurable via `[api.heartbeat] ca-path`. Default comes from `rhsm.conf` `[rhsm] repo_ca_cert`.
 - `identity.sh` prints UUID on stdout; certificate's `O=` subject becomes `host_org` label.
 - systemd's `ProtectHome=yes` makes `/root` invisible to service. systemd-driven scenarios must use real system paths (`/etc/rhc/rhc-heartbeat.conf`, `/etc/pki/consumer`, `/var/lib/rhc`), not sandbox root under `/root`.
 
@@ -91,6 +96,10 @@ Pre-create systemd oneshot unit for Prometheus, enable before testing:
         | sort | uniq -c
 
 - After intentional service failure, promptly run `systemctl stop rhc-heartbeat.service && systemctl reset-failed rhc-heartbeat.service`. Else systemd re-runs service and mutates pending cache.
+
+**Manual runs mislabel the pending cache.** `/var/lib/rhc/heartbeat.jsonl` created unconfined is `var_lib_t` (expected: `rhc_heartbeat_cache_t`). Run `restorecon /var/lib/rhc/heartbeat.jsonl` to fix.
+
+**Check journal for unit warnings on first service start.**
 
 ## Reboot testing
 
