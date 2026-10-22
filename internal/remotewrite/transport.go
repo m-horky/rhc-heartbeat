@@ -136,9 +136,32 @@ func newHTTPClient(
 	}
 
 	return &http.Client{
-		Transport: transport,
-		Timeout:   timeout.Request,
+		Transport:     transport,
+		Timeout:       timeout.Request,
+		CheckRedirect: checkRedirect,
 	}, nil
+}
+
+// checkRedirect permits only same-origin redirects.
+//
+// Only status 307 and 308 are respected, to preserve both method and body.
+func checkRedirect(request *http.Request, via []*http.Request) error {
+	if code := request.Response.StatusCode; code != http.StatusTemporaryRedirect && code != http.StatusPermanentRedirect {
+		return fmt.Errorf(
+			"refuse redirect with status %d: only %d and %d preserve the request body",
+			code, http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+		)
+	}
+
+	if request.URL.Scheme != via[0].URL.Scheme || request.URL.Host != via[0].URL.Host {
+		return fmt.Errorf(
+			"refuse redirect from %s://%s to %s://%s",
+			via[0].URL.Scheme, via[0].URL.Host,
+			request.URL.Scheme, request.URL.Host,
+		)
+	}
+
+	return nil
 }
 
 // newTLSConfig creates the endpoint TLS configuration, including configured certificate verification.

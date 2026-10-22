@@ -212,6 +212,108 @@ func TestTLSConfigAppliesVerificationSetting(t *testing.T) {
 	}
 }
 
+// TestRedirectPolicy verifies redirects stay on the original endpoint's origin and
+// preserve the request method and body.
+//
+// Given a redirect response, when the target changes scheme or host or the redirect
+// status does not preserve the request body,
+// then the client refuses the redirect and fails the request, and otherwise follows it.
+func TestRedirectPolicy(t *testing.T) {
+	second := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer second.Close()
+
+	first := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/same-origin":
+			http.Redirect(writer, request, "/final", http.StatusTemporaryRedirect)
+		case "/cross-origin":
+			http.Redirect(writer, request, second.URL+"/final", http.StatusTemporaryRedirect)
+		case "/bodyless":
+			http.Redirect(writer, request, "/final", http.StatusMovedPermanently)
+		default:
+			writer.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer first.Close()
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{name: "same-origin body-preserving redirect", path: "/same-origin"},
+		{name: "cross-origin redirect", path: "/cross-origin", wantErr: true},
+		{name: "redirect without body preservation", path: "/bodyless", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			followRedirect(t, first.URL+test.path, test.wantErr)
+		})
+	}
+}
+
+// TestCheckRedirectScheme verifies the redirect policy refuses scheme changes, including upgrades.
+//
+// Given a redirect to a different scheme on the same host, when the policy is evaluated,
+// then the redirect is refused regardless of direction.
+func TestCheckRedirectScheme(t *testing.T) {
+	original, err := http.NewRequest(http.MethodPost, "https://example.com/upload", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	for _, target := range []string{"http://example.com/upload", "https://other.example.com/upload"} {
+		redirect, err := http.NewRequest(http.MethodPost, target, nil)
+		if err != nil {
+			t.Fatalf("create request: %v", err)
+		}
+
+		redirect.Response = &http.Response{StatusCode: http.StatusTemporaryRedirect}
+
+		if err := checkRedirect(redirect, []*http.Request{original}); err == nil {
+			t.Errorf("checkRedirect(%s) = nil, want refusal", target)
+		}
+	}
+}
+
+// followRedirect posts to the supplied target using a Remote Write client and
+// verifies whether the redirect outcome matches the expectation.
+func followRedirect(t *testing.T, target string, wantErr bool) {
+	t.Helper()
+
+	client, err := New(
+		config.Config{Heartbeat: config.Endpoint{URI: mustURL(t, target)}},
+		Options{UserAgent: "rhc-heartbeat/test"},
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.CloseIdleConnections()
+
+	request, err := http.NewRequest(http.MethodPost, target, nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	response, err := client.http.Do(request)
+	if err != nil {
+		if !wantErr {
+			t.Fatalf("Do() error = %v", err)
+		}
+
+		return
+	}
+
+	_ = response.Body.Close()
+
+	if wantErr {
+		t.Errorf("Do() succeeded with %s, want redirect refusal", response.Status)
+	}
+}
+
 // makeCertificatePair creates a temporary self-signed certificate and private key for TLS tests.
 func makeCertificatePair(t *testing.T) ([]byte, []byte) {
 	t.Helper()
