@@ -1,4 +1,4 @@
-policy_module(rhc_heartbeat, 0.3.3)
+policy_module(rhc_heartbeat, 0.3.4)
 
 ########################################
 #
@@ -52,8 +52,10 @@ allow rhc_heartbeat_t self:unix_stream_socket create_stream_socket_perms;
 allow rhc_heartbeat_t rhc_heartbeat_cache_t:file manage_file_perms;
 files_var_lib_filetrans(rhc_heartbeat_t, rhc_heartbeat_cache_t, file, "heartbeat.jsonl")
 
-allow rhc_heartbeat_t rhc_heartbeat_lock_t:dir { getattr search };
+# The service can create and remove the lock file when it is missing at startup.
+allow rhc_heartbeat_t rhc_heartbeat_lock_t:dir rw_dir_perms;
 allow rhc_heartbeat_t rhc_heartbeat_lock_t:file manage_file_perms;
+filetrans_pattern(rhc_heartbeat_t, rhc_heartbeat_lock_t, rhc_heartbeat_lock_t, file, "heartbeat.lock")
 
 # Facts collection runs subscription-manager(8) in the rhsmcertd_t domain,
 # reusing the policy maintained for its Python code. rhsmcertd_t can only

@@ -2,3 +2,5 @@ build/
 vendor/
 selinux/*.pp
 rhc-heartbeat-*.tar.*
+__pycache__/
+*.py[co]

@@ -6,11 +6,12 @@ Usage (on the VM, with the proxy environment scrubbed):
     nohup env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
         python3 http500.py > http500.log 2>&1 &
 
-Listens on 127.0.0.1:7001. Point api.heartbeat.uri at
-http://127.0.0.1:7001/api/v1/write to exercise the rejection scenario:
+Listens on 127.0.0.1:$PORT (default 7001). Point api.heartbeat.uri at
+http://127.0.0.1:$PORT/api/v1/write to exercise the rejection scenario:
 the heartbeat must report the 500 and keep the pending heartbeat.
 """
 
+import os
 import sys
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,4 +34,4 @@ class RejectingHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 7001), RejectingHandler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("PORT", "7001"))), RejectingHandler).serve_forever()

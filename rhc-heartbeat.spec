@@ -6,7 +6,7 @@
 %bcond_with go_vendor_tools
 
 %global goipath github.com/m-horky/rhc-heartbeat
-Version:        0.3.3
+Version:        0.3.4
 %gometa -L -f
 
 Name:           rhc-heartbeat
@@ -160,6 +160,7 @@ SELinux policy module confining the rhc-heartbeat daemon.
 if /usr/sbin/selinuxenabled; then
   /usr/sbin/restorecon -R %{_libexecdir}/rhc || :
   /usr/sbin/restorecon -R %{_unitdir}/rhc-heartbeat* || :
+  /usr/sbin/restorecon -R /run/rhc-heartbeat || :
 fi
 
 %postun selinux
