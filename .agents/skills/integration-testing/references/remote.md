@@ -1,5 +1,9 @@
 # Remote execution environment (SSH)
 
+Prefer `make test-vm` (the `/plans/vm` plans) when libvirt is available. This
+file describes the manual fallback for a disposable remote VM supplied by
+the operator.
+
 Suite runs on disposable remote VM supplied by operator: torn down after tests, so agent may freely manage it: start/stop Prometheus, adjust system clock (e.g. `timedatectl set-time`), reboot. No cleanup needed afterward.
 
 ## SSH access
@@ -10,7 +14,7 @@ Verify access before anything else, e.g. `ssh <host> rpm -q podman rhc-heartbeat
 
 ## Prometheus
 
-Port 9090 reserved for Cockpit; host Prometheus on 9000. Copy `test/prometheus.yml` to VM, mirror the `server` target from the `Makefile`, publish port 9000:
+Port 9090 reserved for Cockpit; host Prometheus on 9000. Copy `tests/scripts/prometheus.yml` to VM, mirror the `server` target from the `Makefile`, publish port 9000:
 
     podman run -d --rm --name prometheus \
         -p "0.0.0.0:9000:9090/tcp" \
@@ -24,7 +28,7 @@ Prometheus reachable at `http://<host>:9000` from agent machine (subject to VM f
 
 ## Identity
 
-If remote system unregistered with subscription-manager, generate identity cert pair: copy `test/scripts/identity.sh` to VM, run there (e.g. `bash identity.sh -f /etc/pki/consumer`), or run locally and copy `key.pem` and `cert.pem` to VM.
+If remote system unregistered with subscription-manager, generate identity cert pair: from the repository root run `python3 -m tests.scripts.identity -f /etc/pki/consumer` on the VM, or run it locally and copy `key.pem` and `cert.pem` to the VM.
 
 ## Configuration and execution
 
@@ -35,7 +39,7 @@ Edit/create `/etc/rhc/rhc-heartbeat.conf` pointing at custom Prometheus location
     [api.heartbeat]
     uri = "http://localhost:9000/api/v1/write"
 
-Query Prometheus: `bash test/scripts/query.sh -u http://<host>:9000/api/v1/query` from agent machine. If VM firewall blocks port, open it (`firewall-cmd --add-port=9000/tcp`) or copy `test/scripts/query.sh` to VM and query `http://localhost:9000/api/v1/query` there.
+Query Prometheus: `python3 -m tests.scripts.query -u http://<host>:9000/api/v1/query` from the repository root. If the VM firewall blocks the port, open it (`firewall-cmd --add-port=9000/tcp`) or run the same command on the VM against `http://localhost:9000/api/v1/query`.
 
 ## Environment pitfalls
 
@@ -83,7 +87,7 @@ Pre-create systemd oneshot unit for Prometheus, enable before testing:
 
 - `/usr/libexec/rhc/heartbeat config` prints resolved configuration; use it to discover valid keys instead of guessing. Unknown keys in `rhc-heartbeat.conf` silently ignored.
 - TLS CA configurable via `[api.heartbeat] ca-path`. Default comes from `rhsm.conf` `[rhsm] repo_ca_cert`.
-- `identity.sh` prints UUID on stdout; certificate's `O=` subject becomes `host_org` label.
+- `python3 -m tests.scripts.identity` prints the UUID on stdout; certificate's `O=` subject becomes the `host_org` label.
 - systemd's `ProtectHome=yes` makes `/root` invisible to service. systemd-driven scenarios must use real system paths (`/etc/rhc/rhc-heartbeat.conf`, `/etc/pki/consumer`, `/var/lib/rhc`), not sandbox root under `/root`.
 
 ## systemd and SELinux

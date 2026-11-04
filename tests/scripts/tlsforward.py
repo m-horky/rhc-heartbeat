@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """TLS Remote Write endpoint forwarding to the local Prometheus.
 
-Serves HTTPS on 127.0.0.1:7443 and forwards every POST body to
-http://127.0.0.1:9000/api/v1/write, replaying the response status. Used for
+Serves HTTPS on 127.0.0.1:$PORT (default 7443) and forwards every POST
+body to $UPSTREAM (default http://127.0.0.1:9000/api/v1/write), replaying
+the response status. Used for
 the TLS verification scenarios: run it once with a certificate signed by the
 configured authority (upload must succeed) and once with an untrusted
 certificate (client must report a TLS error and keep the pending heartbeat).
@@ -30,9 +31,9 @@ Usage (on the VM, with the proxy environment scrubbed):
         TLS_CERT=server-trusted.pem TLS_KEY=server.key \
         python3 tlsforward.py > tlsforward.log 2>&1 &
 
-The CA is configured on the client side through rhsm.conf, section [rhsm],
-key repo_ca_cert (NOT through rhc-heartbeat.conf, whose unknown keys are
-silently ignored).
+The CA is configured on the client side through [api.heartbeat] ca-path,
+or derived from rhsm.conf section [rhsm] key repo_ca_cert when ca-path is
+not set.
 """
 
 import os
@@ -43,7 +44,7 @@ import urllib.request
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-UPSTREAM = "http://127.0.0.1:9000/api/v1/write"
+UPSTREAM = os.environ.get("UPSTREAM", "http://127.0.0.1:9000/api/v1/write")
 
 
 class ForwardingHandler(BaseHTTPRequestHandler):
@@ -76,7 +77,7 @@ class ForwardingHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", 7443), ForwardingHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("PORT", "7443"))), ForwardingHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(os.environ["TLS_CERT"], os.environ["TLS_KEY"])
     server.socket = context.wrap_socket(server.socket, server_side=True)

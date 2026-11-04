@@ -1,0 +1,58 @@
+# Run the tests in a virtual machine.
+#
+# Requires `make rpm`.
+
+summary: Virtual machine environment
+enabled: false
+provision:
+    how: virtual
+    image: centos-stream-10
+prepare:
+  - name: test-tools
+    how: install
+    package:
+      - curl
+      - python3
+      - openssl
+      - podman
+    order: 1
+
+  - name: prometheus-start
+    how: shell
+    script: $TMT_TREE/tests/scripts/prometheus.sh start
+    order: 10
+
+  - name: rhc-heartbeat-rpms
+    how: install
+    directory:
+      - $TMT_TREE/.tmt-artifacts/x86_64
+      - $TMT_TREE/.tmt-artifacts/noarch
+    order: 20
+execute:
+    how: tmt
+finish:
+  - name: prometheus-stop
+    how: shell
+    script: $TMT_TREE/tests/scripts/prometheus.sh stop
+    order: 90
+
+/tier1:
+    summary: Basic use-cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:1
+
+/tier2:
+    summary: Resilience and edge cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:2
+
+/tier3:
+    summary: System integration
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:3

@@ -1,0 +1,50 @@
+summary: Resilience and edge cases
+description: |
+    Tier 2 covers recovery, identity rotation, rejected uploads, concurrent
+    runs, proxy authentication, TLS verification, configuration precedence
+    and invalid configuration.
+test: python3 -u -m unittest test.TestTier2
+framework: shell
+tier: 2
+duration: 5m
+enabled: false
+
+/recovery:
+    summary: Connectivity recovers after a failed upload
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_recovery
+
+/identity-rotation:
+    summary: A queued heartbeat keeps its identity
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_identity_rotation
+
+/upload-rejected:
+    summary: The Remote Write endpoint rejects an upload
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_upload_rejected
+
+/concurrency:
+    summary: Concurrent runs do not corrupt heartbeats
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_concurrency
+
+/proxy-auth:
+    summary: Proxy authentication controls upload access
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_proxy_auth
+
+/tls-ca:
+    summary: TLS uses the configured certificate authority
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_tls_ca
+
+/dropin-precedence:
+    summary: A drop-in overrides the base configuration
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_dropin_precedence
+
+/invalid-config:
+    summary: Invalid configuration keeps a pending heartbeat
+    enabled: true
+    test: python3 -u -m unittest test.TestTier2.test_invalid_config
