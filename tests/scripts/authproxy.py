@@ -10,7 +10,7 @@ Usage (on the VM, with the proxy environment scrubbed):
     nohup env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
         python3 authproxy.py > authproxy.log 2>&1 &
 
-Listens on 127.0.0.1:7000. Configure the heartbeat with:
+Listens on 127.0.0.1:$PORT (default 7000). Configure the heartbeat with:
 
     [http.proxy]
     uri = "http://good:pass@127.0.0.1:7000"   # or bad:pass for the 407 case
@@ -26,6 +26,7 @@ container IP (podman inspect prometheus --format
 """
 
 import base64
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -78,4 +79,4 @@ class AuthenticatingProxy(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 7000), AuthenticatingProxy).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("PORT", "7000"))), AuthenticatingProxy).serve_forever()

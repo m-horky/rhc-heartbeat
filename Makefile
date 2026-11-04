@@ -4,6 +4,7 @@
 VERSION := $(shell rpmspec rhc-heartbeat.spec --query --srpm --queryformat '%{version}')
 LDFLAGS := -ldflags "-X github.com/redhatinsights/rhc/pkg/version.Version=$(VERSION)"
 RPMBUILD_CHECK_OPTION := $(if $(filter 1,$(NOCHECK)),--without check)
+ARTIFACTS_DIR := $(CURDIR)/.tmt-artifacts
 
 .PHONY: check
 check:
@@ -11,6 +12,8 @@ check:
 	go test ./...
 	go vet ./...
 	golangci-lint run
+	python3 -m compileall -q tests
+	tmt lint
 
 .PHONY: fmt
 fmt:
@@ -20,7 +23,16 @@ fmt:
 .PHONY: build
 build:
 	mkdir -p build
-	go build -o build/heartbeat ./cmd/rhc-heartbeat
+	CGO_ENABLED=0 go build -o build/heartbeat ./cmd/rhc-heartbeat
+	CGO_ENABLED=0 go build -o build/heartbeat-rhsm ./cmd/heartbeat-rhsm
+
+# Copy build artifacts into a non-git-ignored directory, so tmt copies them over
+# to the test environment.
+.PHONY: _copy_tmt_artifacts
+_copy_tmt_artifacts:
+	@if [ ! -d build ]; then echo "no such directory: build/" >&2; exit 1; fi
+	rm -rf "$(ARTIFACTS_DIR)"
+	cp -a build "$(ARTIFACTS_DIR)"
 
 .PHONY: server
 server:
@@ -28,10 +40,26 @@ server:
 	    --name prometheus \
 	    --network podman \
 	    -p "0.0.0.0:9090:9090/tcp" \
-	    -v "./test/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z" \
+	    -v "./tests/scripts/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z" \
 	    "docker.io/prom/prometheus:latest" \
 	    --config.file=/etc/prometheus/prometheus.yml \
 	    --web.enable-remote-write-receiver
+
+.PHONY: test-local
+test-local: _copy_tmt_artifacts
+	trap 'rm -rf "$(ARTIFACTS_DIR)"' EXIT; \
+	tmt --feeling-safe run -vvv -a --scratch \
+	    provision --how local plan --name '^/plans/local/'
+
+.PHONY: test-container
+test-container: _copy_tmt_artifacts
+	trap 'rm -rf "$(ARTIFACTS_DIR)"' EXIT; \
+	tmt run -vvv -a --scratch plan --name '^/plans/container/'
+
+.PHONY: test-vm
+test-vm: _copy_tmt_artifacts
+	trap 'rm -rf "$(ARTIFACTS_DIR)"' EXIT; \
+	tmt run -vvv -a --scratch plan --name '^/plans/vm/'
 
 .PHONY: archive
 archive:
@@ -67,6 +95,7 @@ rpm: srpm
 
 .PHONY: clean
 clean:
+	rm -rf "$(ARTIFACTS_DIR)"
 	rm -rf build/
 	rm -rf vendor/
 	rm -rf rhc-heartbeat-*.tar.*
