@@ -1,8 +1,9 @@
 policy_module(rhc_heartbeat, 0.3.3)
 
-#######################################################################
+########################################
+#
 # Declarations
-#######################################################################
+#
 
 type rhc_heartbeat_t;
 type rhc_heartbeat_exec_t;
@@ -16,6 +17,19 @@ init_nnp_daemon_domain(rhc_heartbeat_t)
 type rhc_heartbeat_unit_file_t;
 systemd_unit_file(rhc_heartbeat_unit_file_t)
 
+# Pending-heartbeat cache and its rotated variants, claimed by name
+# pattern only: the shared /var/lib/rhc directory keeps its generic label.
+type rhc_heartbeat_cache_t;
+files_type(rhc_heartbeat_cache_t)
+
+# Lock file, with the directory created by systemd-tmpfiles.
+type rhc_heartbeat_lock_t;
+files_type(rhc_heartbeat_lock_t)
+
+# Define a custom wrapper with a domain that is allowed to transition
+# into rhsmcertd_t.
+type rhc_heartbeat_rhsm_exec_t;
+
 # Require the domain of resources we need.
 gen_require(`
 	type rhsmcertd_t;
@@ -24,33 +38,13 @@ gen_require(`
 	type cgroup_t;
 ')
 
-# Define a custom wrapper with a domain that is allowed to transition
-# into rhsmcertd_t.
-type rhc_heartbeat_rhsm_exec_t;
-
-# Pending-heartbeat cache and its rotated variants, claimed by name
-# pattern only: the shared /var/lib/rhc directory keeps its generic label.
-type rhc_heartbeat_cache_t;
-files_type(rhc_heartbeat_cache_t)
-
-#######################################################################
+########################################
+#
 # rhc_heartbeat local policy
-#######################################################################
+#
 
 allow rhc_heartbeat_t self:fifo_file rw_fifo_file_perms;
 allow rhc_heartbeat_t self:unix_stream_socket create_stream_socket_perms;
-
-domain_use_interactive_fds(rhc_heartbeat_t)
-
-# Read /etc/rhc/rhc-heartbeat.conf and its drop-ins.
-files_read_etc_files(rhc_heartbeat_t)
-
-# /etc/rhsm/rhsm.conf, /etc/rhsm/ca/ and others are labeled as
-# rhsmcertd_config_t.
-rhsmcertd_read_config_files(rhc_heartbeat_t)
-
-# Read RHSM consumer and product certificates.
-miscfiles_read_all_certs(rhc_heartbeat_t)
 
 # Read and write a cache in /var/lib/rhc.
 # Since /var/lib/rhc is not owned by this package (see rhc, yggdrasil),
@@ -58,19 +52,8 @@ miscfiles_read_all_certs(rhc_heartbeat_t)
 allow rhc_heartbeat_t rhc_heartbeat_cache_t:file manage_file_perms;
 files_var_lib_filetrans(rhc_heartbeat_t, rhc_heartbeat_cache_t, file, "heartbeat.jsonl")
 
-# Lock file, with the directory created by systemd-tmpfiles.
-type rhc_heartbeat_lock_t;
-files_type(rhc_heartbeat_lock_t)
-
 allow rhc_heartbeat_t rhc_heartbeat_lock_t:dir { getattr search };
 allow rhc_heartbeat_t rhc_heartbeat_lock_t:file manage_file_perms;
-
-# Outbound TCP connections for Prometheus and HTTP proxy.
-corenet_tcp_connect_all_ports(rhc_heartbeat_t)
-corenet_tcp_sendrecv_all_ports(rhc_heartbeat_t)
-sysnet_dns_name_resolve(rhc_heartbeat_t)
-
-dev_read_urand(rhc_heartbeat_t)
 
 # Facts collection runs subscription-manager(8) in the rhsmcertd_t domain,
 # reusing the policy maintained for its Python code. rhsmcertd_t can only
@@ -88,6 +71,32 @@ allow rhc_heartbeat_t rhsmcertd_t:process2 nnp_transition;
 # This grants the entrypoint permission the transition requires.
 domain_entry_file(rhsmcertd_t, rhc_heartbeat_rhsm_exec_t)
 
+# subscription-manager facts runs virt-what and dmidecode. NoNewPrivileges
+# set by the units is inherited across fork/exec, so the transition from
+# rhsmcertd_t into dmidecode_t needs the nnp_transition permission too,
+# mirroring the grant for the rhc_heartbeat_t -> rhsmcertd_t hop above.
+allow rhsmcertd_t dmidecode_t:process2 nnp_transition;
+
+# Outbound TCP connections for Prometheus and HTTP proxy.
+corenet_tcp_connect_all_ports(rhc_heartbeat_t)
+corenet_tcp_sendrecv_all_ports(rhc_heartbeat_t)
+
+dev_read_urand(rhc_heartbeat_t)
+
+domain_use_interactive_fds(rhc_heartbeat_t)
+
+# Read /etc/rhc/rhc-heartbeat.conf and its drop-ins.
+files_read_etc_files(rhc_heartbeat_t)
+
+# Read RHSM consumer and product certificates.
+miscfiles_read_all_certs(rhc_heartbeat_t)
+
+sysnet_dns_name_resolve(rhc_heartbeat_t)
+
+# /etc/rhsm/rhsm.conf, /etc/rhsm/ca/ and others are labeled as
+# rhsmcertd_config_t.
+rhsmcertd_read_config_files(rhc_heartbeat_t)
+
 # The Go runtime reads the transparent hugepage page size at startup.
 allow rhc_heartbeat_t sysfs_t:file { getattr open read };
 
@@ -98,9 +107,3 @@ allow rhc_heartbeat_t cgroup_t:dir search;
 allow rhc_heartbeat_t cgroup_t:file { getattr open read };
 allow rhsmcertd_t cgroup_t:dir search;
 allow rhsmcertd_t cgroup_t:file { getattr open read };
-
-# subscription-manager facts runs virt-what and dmidecode. NoNewPrivileges
-# set by the units is inherited across fork/exec, so the transition from
-# rhsmcertd_t into dmidecode_t needs the nnp_transition permission too,
-# mirroring the grant for the rhc_heartbeat_t -> rhsmcertd_t hop above.
-allow rhsmcertd_t dmidecode_t:process2 nnp_transition;

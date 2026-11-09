@@ -72,12 +72,6 @@ interface(`rhc_heartbeat_systemctl',`
 ##	Domain allowed access.
 ##	</summary>
 ## </param>
-## <param name="role">
-##	<summary>
-##	Role allowed access.
-##	</summary>
-## </param>
-## <rolecap/>
 #
 interface(`rhc_heartbeat_admin',`
 	gen_require(`
@@ -98,6 +92,5 @@ interface(`rhc_heartbeat_admin',`
 
 	optional_policy(`
 		systemd_passwd_agent_exec($1)
-		systemd_read_fifo_file_passwd_run($1)
 	')
 ')
