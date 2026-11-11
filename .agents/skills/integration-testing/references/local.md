@@ -1,17 +1,49 @@
-# Local execution environment
+# Local and container execution
 
-The suite runs in the agent's own container. The agent cannot manage the Prometheus server, the system clock, or reboots: Podman is not available in the container, and the host running it is not disposable.
+There are two non-VM plans:
+
+- `/plans/local`: runs on the runner, uses `build/heartbeat` staged in
+  `.tmt-artifacts/` and a temporary sandbox root.
+- `/plans/container`: runs in a CentOS Stream container, uses the RPMs from
+  `build/` and real system paths.
+
+Both cover tier 1 and tier 2.
 
 ## Prometheus
 
-The Prometheus server is managed by the operator and expected at `http://10.88.0.1:9090` (see `docs/TESTING.md`). Verify that it is reachable before running scenarios, for example:
+The local and container plans use an externally managed receiver. They do not
+start Prometheus; the `prepare` phase only checks that `PROMETHEUS_URL` is set
+and healthy. Start one with `make server` and export an address reachable from
+the test environment before running:
 
-    curl -fsS http://10.88.0.1:9090/-/healthy
+    export PROMETHEUS_URL=http://127.0.0.1:9090
+    curl --noproxy '*' -fsS "$PROMETHEUS_URL/-/healthy"
 
-If the instance cannot be accessed, report that to the operator and ask them to enable it (they may use `make server`); do not attempt to start, stop, or reconfigure it yourself.
+For container tests, use the host's non-loopback address or another address
+reachable from inside the container, not `127.0.0.1`. If the receiver is not
+reachable, report the error to the operator and ask them to start it; do not
+guess another endpoint.
+
+The VM plan starts its own Podman container, so it does not need an external
+receiver or `PROMETHEUS_URL`.
+
+## Commands
+
+    make test-local      # tier 1 and 2 on the local machine
+    make test-container  # tier 1 and 2 in a CentOS Stream container
+    make test-dry        # validate metadata and plan selection
+
+The local target requires `--feeling-safe`, which the Makefile supplies.
+It stages `build/` into `.tmt-artifacts/` so tmt copies the artifacts into
+the plan work tree; `/plans/local` reads the binary from there. Do not add
+`.tmt-artifacts/` to `.gitignore`, otherwise tmt skips it again.
 
 ## Capability restrictions
 
-Scenarios that require managing the system clock or rebooting the machine (see the respective scenarios in `test/features/tier-3.feature`) cannot be executed in this environment. Report them as not executable locally instead of simulating, approximating, or silently skipping them.
+The local and container plans cannot run tier 3: there is no systemd
+session, no SELinux confinement and no reboot. Do not simulate these
+scenarios outside `/plans/vm`; run it on a disposable VM instead.
 
-If the system is not registered with subscription-manager, simulate the identity certificate pair with `test/scripts/identity.sh` as shown in `docs/TESTING.md`.
+The local plan must not write outside its temporary root. The test library
+sets the `RHC_HEARTBEAT_*` path overrides for that reason. Do not run the
+binary with system paths on the runner.

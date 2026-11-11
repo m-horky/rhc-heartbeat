@@ -1,0 +1,49 @@
+summary: System integration
+description: |
+    Tier 3 exercises the packaged binary through its systemd units and
+    SELinux policy.
+test: python3 -u -m unittest test.TestTier3
+framework: shell
+tier: 3
+duration: 10m
+enabled: false
+require:
+  - subscription-manager
+  - audit
+check:
+  - how: avc
+
+/service-upload:
+    summary: The service uploads a heartbeat
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_service_upload
+
+/service-endpoint-down:
+    summary: The service fails while the endpoint is down
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_service_endpoint_down
+
+/service-unregistered:
+    summary: The service fails while unregistered
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_service_unregistered
+
+/timer:
+    summary: The timer schedules the service
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_timer
+
+/online-report:
+    summary: The online report uploads a heartbeat
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_online_report
+
+/selinux:
+    summary: The service runs without SELinux violations
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_selinux
+
+/reboot:
+    summary: A reboot preserves queued heartbeats
+    enabled: true
+    test: python3 -u -m unittest test.TestTier3.test_reboot

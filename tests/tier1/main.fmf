@@ -1,0 +1,25 @@
+summary: Basic use-cases
+description: |
+    Tier 1 covers the basic heartbeat lifecycle: collecting a heartbeat
+    before registration, uploading after the identity appears, and keeping
+    the pending heartbeat locally if it can't be uploaded.
+test: python3 -u -m unittest test.TestTier1
+framework: shell
+tier: 1
+duration: 1m
+enabled: false
+
+/before-registration:
+    summary: Before registration
+    enabled: true
+    test: python3 -u -m unittest test.TestTier1.test_before_registration
+
+/registration:
+    summary: System gets registered
+    enabled: true
+    test: python3 -u -m unittest test.TestTier1.test_registration
+
+/local-caching:
+    summary: Payload is cached if it can't be uploaded
+    enabled: true
+    test: python3 -u -m unittest test.TestTier1.test_local_caching
