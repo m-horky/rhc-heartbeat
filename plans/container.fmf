@@ -1,0 +1,45 @@
+# Run tests in a container.
+#
+# Requires `make rpm`.
+
+summary: Container environment
+enabled: false
+provision:
+    how: container
+    image: quay.io/centos/centos:stream10
+environment:
+    PROMETHEUS_URL: http://10.88.0.1:9090
+prepare:
+  - name: prometheus-check
+    how: shell
+    script: $TMT_TREE/tests/scripts/prometheus.sh check
+    order: 10
+  - name: test-tools
+    how: install
+    package:
+      - curl
+      - python3
+      - openssl
+    order: 1
+  - name: rhc-heartbeat-rpms
+    how: install
+    directory:
+      - $TMT_TREE/.tmt-artifacts/x86_64
+      - $TMT_TREE/.tmt-artifacts/noarch
+    order: 20
+execute:
+    how: tmt
+
+/tier1:
+    summary: Basic use-cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:1
+
+/tier2:
+    summary: Resilience and edge cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:2
