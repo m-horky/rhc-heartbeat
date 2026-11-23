@@ -1,0 +1,50 @@
+# Run the tests locally.
+#
+# Requires `make build`.
+
+summary: Local environment
+enabled: false
+provision:
+    how: local
+environment:
+    HEARTBEAT_BIN: $TMT_TREE/.tmt-artifacts/heartbeat
+    PROMETHEUS_URL: http://127.0.0.1:9090
+    SANDBOX_DESTROY: "0"
+prepare:
+  - name: heartbeat-bin
+    how: shell
+    script: |
+        if [ ! -x "$TMT_TREE/.tmt-artifacts/heartbeat" ]; then
+            echo "$TMT_TREE/.tmt-artifacts/heartbeat is missing or not executable, run 'make build' first" >&2
+            exit 1
+        fi
+    order: 5
+  - name: prometheus-check
+    how: shell
+    script: $TMT_TREE/tests/scripts/prometheus.sh check
+    order: 10
+  - name: sandbox-create
+    how: shell
+    script: $TMT_TREE/tests/scripts/sandbox.sh create
+    order: 20
+execute:
+    how: tmt
+finish:
+  - name: sandbox-cleanup
+    how: shell
+    script: $TMT_TREE/tests/scripts/sandbox.sh clean
+    order: 90
+
+/tier1:
+    summary: Basic use-cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:1
+
+/tier2:
+    summary: Resilience and edge cases
+    enabled: true
+    discover:
+        how: fmf
+        filter: tier:2
