@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/golang/snappy v1.0.0
 	github.com/google/go-cmp v0.7.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/ini.v1 v1.68.0
@@ -14,5 +14,5 @@ require (
 
 require (
 	github.com/stretchr/testify v1.12.1 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 )
